@@ -178,7 +178,8 @@ def linear_elasticity_problem():
     V = fem.functionspace(domain, vector_element)
     ds = ufl.Measure("ds", domain=domain)
 
-    u = fem.Function(V, name="Deformation", graph=graph_)
+    uh = fem.Function(V, name="Deformation", graph=graph_)
+    u = ufl.TrialFunction(V)
     v = ufl.TestFunction(V)
 
     f = fem.Constant(domain, ScalarType((0, 0, -rho * g)))
@@ -206,25 +207,27 @@ def linear_elasticity_problem():
         u_D, fem.locate_dofs_topological(V, domain.topology.dim - 1, boundary_facets), V
     )
 
-    problem = fem.petsc.NonlinearProblem(
-        F,
-        u,
+    problem = fem.petsc.LinearProblem(
+        a,
+        L,
+        u=uh,
         bcs=[bc],
-        petsc_options_prefix="forward_nonlinear",
+        petsc_options={"ksp_type": "preonly", "pc_type": "lu"},
+        petsc_options_prefix="linear_elasticity",
         graph=graph_,
     )
     problem.solve(graph=graph_)
 
-    J_form = ufl.inner(u, u) * ufl.dx
+    J_form = ufl.inner(uh, uh) * ufl.dx
     J = fem.assemble_scalar(fem.form(J_form, graph=graph_), graph=graph_)
 
     return {
         "graph_": graph_,
         "domain": domain,
-        "u": u,
+        "u": uh,
         "lambda_": lambda_,
         "mu": mu,
-        "F": F,
+        "F": ufl.replace(F, {u: uh}),
         "J_form": J_form,
         "J": J,
         "bc": bc,

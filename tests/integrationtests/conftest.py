@@ -464,12 +464,15 @@ def heat_equation_problem():
         lambda x: 15.0 * x[0] * (1.0 - x[0]) * x[1] * (1.0 - x[1])
     )
     u_prev = initial_guess.copy(graph=graph_, name="u_prev")
-    u_next = initial_guess.copy(graph=graph_, name="u_next")
+    u_next = fem.Function(V, name="u_next", graph=graph_)
+    u = ufl.TrialFunction(V)
 
-    F = (
-        ufl.inner((u_next - u_prev) / dt_constant, v) * ufl.dx
-        + ufl.inner(ufl.grad(u_next), ufl.grad(v)) * ufl.dx
+    a = (
+        ufl.inner(u / dt_constant, v) * ufl.dx
+        + ufl.inner(ufl.grad(u), ufl.grad(v)) * ufl.dx
     )
+    L = ufl.inner(u_prev / dt_constant, v) * ufl.dx
+
     t = 0.0
     i = 0
 
@@ -477,14 +480,11 @@ def heat_equation_problem():
     u_iterations = [u_next.copy()]
     while t < T:
         i += 1
-        F = (
-            ufl.inner((u_next - u_prev) / dt_constant, v) * ufl.dx
-            + ufl.inner(ufl.grad(u_next), ufl.grad(v)) * ufl.dx
-        )
-        problem = fem.petsc.NonlinearProblem(
-            F,
-            u_next,
-            petsc_options_prefix="forward_nonlinear",
+        problem = fem.petsc.LinearProblem(
+            a,
+            L,
+            u=u_next,
+            petsc_options_prefix="forward_linear",
             graph=graph_,
         )
         problem.solve(graph=graph_, version=i)
@@ -510,6 +510,6 @@ def heat_equation_problem():
         "initial_guess": initial_guess,
         "u_next": u_next,
         "u_prev": u_prev,
-        "F": F,
+        "F": ufl.replace(a - L, {u: u_next}),
         "u_iterations": u_iterations,
     }

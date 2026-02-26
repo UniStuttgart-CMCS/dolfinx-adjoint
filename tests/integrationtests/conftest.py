@@ -6,9 +6,9 @@ correctly computes gradients using the adjoint method by comparing against
 explicit adjoint calculations.
 """
 
+import gmsh
 import numpy as np
 import pytest
-import gmsh
 import ufl
 from basix.ufl import element
 from dolfinx import mesh
@@ -221,7 +221,6 @@ def linear_elasticity_problem():
     return {
         "graph_": graph_,
         "domain": domain,
-        "V": V,
         "u": u,
         "lambda_": lambda_,
         "mu": mu,
@@ -398,12 +397,8 @@ def stokes_problem():
         "graph_": graph_,
         "mesh": mesh,
         "V": V,
-        "V_u": V_u,
-        "V_p": V_p,
         "V_u_map": V_u_map,
         "up": up,
-        "u": u,
-        "p": p,
         "g": g,
         "nu": nu,
         "F": F,
@@ -412,7 +407,6 @@ def stokes_problem():
         "bcs": bcs,
         "bc_dofs_total": bc_dofs_total,
         "dofs_obstacle": dofs_obstacle,
-        "problem": problem,
         "dObs": dObs,
     }
 
@@ -508,7 +502,6 @@ def heat_equation_problem():
     return {
         "graph_": graph_,
         "domain": domain,
-        "V": V,
         "J_form": J_form,
         "J": J,
         "initial_guess": initial_guess,
@@ -516,6 +509,4 @@ def heat_equation_problem():
         "u_prev": u_prev,
         "F": F,
         "u_iterations": u_iterations,
-        "dt_constant": dt_constant,
-        "v": v,
     }

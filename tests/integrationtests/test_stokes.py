@@ -8,9 +8,8 @@ explicit adjoint calculations.
 
 import numpy as np
 import ufl
-from petsc4py.PETSc import ScalarType
-
 from dolfinx import fem
+from petsc4py.PETSc import ScalarType
 
 
 def test_Stokes_dJdnu(stokes_problem):
@@ -104,7 +103,6 @@ def test_Stokes_dJdg(stokes_problem):
     nonzero on the boundary.
     """
     V = stokes_problem["V"]
-    V_u = stokes_problem["V_u"]
     V_u_map = stokes_problem["V_u_map"]
     up = stokes_problem["up"]
     g = stokes_problem["g"]
@@ -114,7 +112,6 @@ def test_Stokes_dJdg(stokes_problem):
     bcs = stokes_problem["bcs"]
     bc_dofs_total = stokes_problem["bc_dofs_total"]
     dofs_obstacle = stokes_problem["dofs_obstacle"]
-    problem = stokes_problem["problem"]
     graph_ = stokes_problem["graph_"]
 
     argument = ufl.TrialFunction(V)

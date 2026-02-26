@@ -2,7 +2,6 @@
 
 [![CI](https://github.com/unistuttgart-cmcs/dolfinx-adjoint/actions/workflows/ci.yml/badge.svg)](https://github.com/unistuttgart-cmcs/dolfinx-adjoint/actions/workflows/ci.yml)
 [![Docs](https://github.com/unistuttgart-cmcs/dolfinx-adjoint/actions/workflows/docs-publish.yml/badge.svg)](https://unistuttgart-cmcs.github.io/dolfinx-adjoint/)
-![Python >= 3.12](https://img.shields.io/badge/python-%3E%3D3.12-blue)
 ![DOLFINx >= 0.10.0](https://img.shields.io/badge/DOLFINx-%3E%3D0.10.0-orange)
 
 Automatic differentiation for [DOLFINx](https://github.com/FEniCS/dolfinx) using the adjoint method.

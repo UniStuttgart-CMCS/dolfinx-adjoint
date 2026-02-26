@@ -25,12 +25,13 @@ dependencies = [
   "numpy",
   "scipy",
   "fenics-dolfinx>=0.10.0",
+  "networkx",
 ]
 
 [project.optional-dependencies]
-test = ["pytest", "networkx", "gmsh", "isort", "black"]
-demos = ["networkx", "gmsh"]
-all = ["pytest", "networkx", "matplotlib", "gmsh", "isort", "black"]
+test = ["pytest",  "gmsh", "isort", "black"]
+demos = ["gmsh"]
+all = ["pytest", "matplotlib", "gmsh", "isort", "black"]
 
 [tool.setuptools]
 package-dir = {"" = "src"}

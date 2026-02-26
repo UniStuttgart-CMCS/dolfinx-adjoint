@@ -1,0 +1,16 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+title: "DOLFINxADJOINT"
+version: 0.10.0
+doi: "10.5281/zenodo.18769071"
+url: "https://github.com/UniStuttgart-CMCS/dolfinx-adjoint"
+authors:
+  - family-names: "Hornischer"
+    given-names: "Niklas"
+    orcid: "https://orcid.org/0000-0002-1221-9531"
+  - family-names: "Baratta"
+    given-names: "Igor A."
+    orcid: "https://orcid.org/0000-0003-4298-2973"
+  - family-names: "Göddeke"
+    given-names: "Dominik"
+    orcid: "https://orcid.org/0000-0002-1552-497X"

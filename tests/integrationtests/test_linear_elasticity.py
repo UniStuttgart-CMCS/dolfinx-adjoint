@@ -7,87 +7,9 @@ explicit adjoint calculations.
 """
 
 import numpy as np
-import pytest
 import ufl
-from basix.ufl import element
-from dolfinx import fem, mesh, nls
-from mpi4py import MPI
+from dolfinx import fem
 from petsc4py.PETSc import ScalarType
-
-from dolfinx_adjoint import *
-
-
-@pytest.fixture(scope="module")
-def linear_elasticity_problem():
-    """Set up the linear elasticity problem that will be used in all tests."""
-    # Scaled variable
-    L = 1
-    W = 0.1
-    rho = 1
-    delta = W / L
-    gamma = 0.4 * delta**2
-    g = gamma
-
-    graph_ = Graph()
-
-    domain = mesh.create_box(
-        MPI.COMM_WORLD,
-        [np.array([0, 0, 0]), np.array([L, W, W])],
-        [30, 10, 10],
-        cell_type=mesh.CellType.hexahedron,
-    )
-
-    vector_element = element("Lagrange", domain.basix_cell(), 1, shape=(3,))
-    V = fem.functionspace(domain, vector_element)
-    ds = ufl.Measure("ds", domain=domain)
-
-    u = fem.Function(V, name="Deformation", graph=graph_)
-    v = ufl.TestFunction(V)
-
-    f = fem.Constant(domain, ScalarType((0, 0, -rho * g)))
-    T = fem.Constant(domain, ScalarType((0, 0, 0)))
-    lambda_ = fem.Constant(domain, ScalarType(1.0), graph=graph_)
-    mu = fem.Constant(domain, ScalarType(1.25), graph=graph_)
-
-    a = (
-        ufl.inner(
-            lambda_ * ufl.nabla_div(u) * ufl.Identity(len(u))
-            + 2 * mu * ufl.sym(ufl.grad(u)),
-            ufl.sym(ufl.grad(v)),
-        )
-        * ufl.dx
-    )
-    L = ufl.dot(f, v) * ufl.dx + ufl.dot(T, v) * ds
-    F = a - L
-
-    # Boundary condition describing the clamped left side of the beam
-    u_D = np.array([0, 0, 0], dtype=ScalarType)
-    boundary_facets = mesh.locate_entities_boundary(
-        domain, domain.topology.dim - 1, lambda x: np.isclose(x[0], 0)
-    )
-    bc = fem.dirichletbc(
-        u_D, fem.locate_dofs_topological(V, domain.topology.dim - 1, boundary_facets), V
-    )
-
-    problem = fem.petsc.NewtonSolverNonlinearProblem(F, u, bcs=[bc], graph=graph_)
-    solver = nls.petsc.NewtonSolver(MPI.COMM_WORLD, problem, graph=graph_)
-    solver.solve(u, graph=graph_)
-
-    J_form = ufl.inner(u, u) * ufl.dx
-    J = fem.assemble_scalar(fem.form(J_form, graph=graph_), graph=graph_)
-
-    return {
-        "graph_": graph_,
-        "domain": domain,
-        "V": V,
-        "u": u,
-        "lambda_": lambda_,
-        "mu": mu,
-        "F": F,
-        "J_form": J_form,
-        "J": J,
-        "bc": bc,
-    }
 
 
 def test_material_param_lambda(linear_elasticity_problem):

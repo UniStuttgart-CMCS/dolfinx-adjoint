@@ -128,7 +128,9 @@ def test_Stokes_dJdg(stokes_problem):
     dJdu = fem.assemble_vector(fem.form(dJdu)).array
     dJdg = fem.assemble_vector(fem.form(dJdg)).array
 
-    dFdg = fem.assemble_matrix(problem._a).to_dense()
+    dFdg = fem.assemble_matrix(
+        fem.form(ufl.derivative(F, up, ufl.TrialFunction(up.function_space)))
+    ).to_dense()
     dFdu = fem.assemble_matrix(fem.form(dFdu), bcs=bcs).to_dense()
 
     # Apply the boundary conditions to the rhs of the adjoint problem

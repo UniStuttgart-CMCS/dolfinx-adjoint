@@ -206,9 +206,14 @@ def linear_elasticity_problem():
         u_D, fem.locate_dofs_topological(V, domain.topology.dim - 1, boundary_facets), V
     )
 
-    problem = fem.petsc.NewtonSolverNonlinearProblem(F, u, bcs=[bc], graph=graph_)
-    solver = nls.petsc.NewtonSolver(MPI.COMM_WORLD, problem, graph=graph_)
-    solver.solve(u, graph=graph_)
+    problem = fem.petsc.NonlinearProblem(
+        F,
+        u,
+        bcs=[bc],
+        petsc_options_prefix="forward_nonlinear",
+        graph=graph_,
+    )
+    problem.solve(graph=graph_)
 
     J_form = ufl.inner(u, u) * ufl.dx
     J = fem.assemble_scalar(fem.form(J_form, graph=graph_), graph=graph_)
@@ -367,10 +372,14 @@ def stokes_problem():
     F = a - L
 
     # Define the problem solver
-    problem = fem.petsc.NewtonSolverNonlinearProblem(F, up, bcs=bcs, graph=graph_)
-    solver = nls.petsc.NewtonSolver(MPI.COMM_WORLD, problem, graph=graph_)
-
-    solver.solve(up, graph=graph_)
+    problem = fem.petsc.NonlinearProblem(
+        F,
+        up,
+        bcs=bcs,
+        petsc_options_prefix="forward_nonlinear",
+        graph=graph_,
+    )
+    problem.solve(graph=graph_)
 
     # Define the objective function
     dObs = ufl.Measure(
@@ -475,10 +484,13 @@ def heat_equation_problem():
             ufl.inner((u_next - u_prev) / dt_constant, v) * ufl.dx
             + ufl.inner(ufl.grad(u_next), ufl.grad(v)) * ufl.dx
         )
-        problem = fem.petsc.NewtonSolverNonlinearProblem(F, u_next, graph=graph_)
-        solver = nls.petsc.NewtonSolver(MPI.COMM_WORLD, problem, graph=graph_)
-
-        solver.solve(u_next, graph=graph_, version=i)
+        problem = fem.petsc.NonlinearProblem(
+            F,
+            u_next,
+            petsc_options_prefix="forward_nonlinear",
+            graph=graph_,
+        )
+        problem.solve(graph=graph_, version=i)
         t += dt
         u_prev.assign(u_next, graph=graph_, version=i)
 

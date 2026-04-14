@@ -80,6 +80,10 @@ def poisson_problem(cell_type, solver: bool):
     boundary_dofs_T = fem.locate_dofs_geometrical(V, lambda x: np.isclose(x[1], 1.0))
     boundary_dofs_B = fem.locate_dofs_geometrical(V, lambda x: np.isclose(x[1], 0.0))
 
+    bcs_dofs = np.concatenate(
+        [boundary_dofs_L, boundary_dofs_R, boundary_dofs_T, boundary_dofs_B]
+    )
+
     bcs = [
         fem.dirichletbc(uD_L, boundary_dofs_L, graph=graph_),
         fem.dirichletbc(uD_R, boundary_dofs_R),
@@ -87,14 +91,6 @@ def poisson_problem(cell_type, solver: bool):
         fem.dirichletbc(uD_B, boundary_dofs_B),
     ]
 
-    # Boundary conditions of adjoint must be set to zero since there cannot be any contribution from the boundary to the gradient of J with respect to variables except for the boundary condition itself.
-    bcs_adjoint = fem.dirichletbc(
-        ScalarType(0.0),
-        np.concatenate(
-            [boundary_dofs_L, boundary_dofs_R, boundary_dofs_T, boundary_dofs_B]
-        ),
-        V,
-    )
 
     # Define the problem solver and solve it
     if solver == "nonlinear":
@@ -150,7 +146,7 @@ def poisson_problem(cell_type, solver: bool):
         "boundary_dofs_L": boundary_dofs_L,
         "J_form": J_form,
         "J": J,
-        "bcs_adjoint": [bcs_adjoint],
+        "bcs_dofs": bcs_dofs,
     }
 
 

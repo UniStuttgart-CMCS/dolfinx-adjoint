@@ -42,7 +42,7 @@ def test_Poisson_dJdf(poisson_problem):
     uh = poisson_problem["uh"]
     f = poisson_problem["f"]
     J_form = poisson_problem["J_form"]
-    bcs_adjoint = poisson_problem["bcs_adjoint"]
+    bcs_dofs = poisson_problem["bcs_dofs"]
     graph_ = poisson_problem["graph_"]
     J = poisson_problem["J"]
 
@@ -51,8 +51,15 @@ def test_Poisson_dJdf(poisson_problem):
     dJdu = ufl.derivative(J_form, uh)
     dJdf = ufl.derivative(J_form, f)
 
+    # Boundary conditions of adjoint must be set to zero since there cannot be any contribution from the boundary to the gradient of J with respect to variables except for the boundary condition itself.
+    bcs_adjoint = fem.dirichletbc(
+        ScalarType(0.0),
+        bcs_dofs,
+        uh.function_space,
+    )
+
     adjoint_solution = LinearProblem(
-        ufl.adjoint(dFdu), -dJdu, bcs=bcs_adjoint, petsc_options_prefix="adjoint_"
+        ufl.adjoint(dFdu), -dJdu, bcs=[bcs_adjoint], petsc_options_prefix="adjoint_"
     ).solve()
     gradient = ufl.action(ufl.adjoint(dFdf), adjoint_solution) + dJdf
 
@@ -93,7 +100,7 @@ def test_Poisson_dJdnu(poisson_problem):
     uh = poisson_problem["uh"]
     nu = poisson_problem["nu"]
     J_form = poisson_problem["J_form"]
-    bcs_adjoint = poisson_problem["bcs_adjoint"]
+    bcs_dofs = poisson_problem["bcs_dofs"]
     graph_ = poisson_problem["graph_"]
     J = poisson_problem["J"]
 
@@ -109,8 +116,15 @@ def test_Poisson_dJdnu(poisson_problem):
     dFdnu = ufl.derivative(F_replaced, nu_function)
     dFdu = ufl.derivative(F, uh)
 
+    # Boundary conditions of adjoint must be set to zero since there cannot be any contribution from the boundary to the gradient of J with respect to variables except for the boundary condition itself.
+    bcs_adjoint = fem.dirichletbc(
+        ScalarType(0.0),
+        bcs_dofs,
+        uh.function_space,
+    )
+
     adjoint_solution = LinearProblem(
-        ufl.adjoint(dFdu), -dJdu, bcs=bcs_adjoint, petsc_options_prefix="adjoint_"
+        ufl.adjoint(dFdu), -dJdu, bcs=[bcs_adjoint], petsc_options_prefix="adjoint_"
     ).solve()
     gradient = ufl.action(ufl.adjoint(dFdnu), adjoint_solution) + dJdnu
     gradient = dolfinx.fem.assemble_scalar(dolfinx.fem.form(gradient))
@@ -160,7 +174,7 @@ def test_Poisson_dJdbc(poisson_problem):
     uD_L = poisson_problem["uD_L"]
     J_form = poisson_problem["J_form"]
     boundary_dofs_L = poisson_problem["boundary_dofs_L"]
-    bcs_adjoint = poisson_problem["bcs_adjoint"]
+    bcs_dofs = poisson_problem["bcs_dofs"]
     graph_ = poisson_problem["graph_"]
     J = poisson_problem["J"]
 
@@ -168,8 +182,15 @@ def test_Poisson_dJdbc(poisson_problem):
     dJdu = ufl.derivative(J_form, uh)
     dFdbc = ufl.derivative(F, uh, ufl.TrialFunction(uh.function_space))
 
+    # Boundary conditions of adjoint must be set to zero since there cannot be any contribution from the boundary to the gradient of J with respect to variables except for the boundary condition itself.
+    bcs_adjoint = fem.dirichletbc(
+        ScalarType(0.0),
+        bcs_dofs,
+        uh.function_space,
+    )
+
     adjoint_solution = LinearProblem(
-        ufl.adjoint(dFdu), -dJdu, bcs=bcs_adjoint, petsc_options_prefix="adjoint_"
+        ufl.adjoint(dFdu), -dJdu, bcs=[bcs_adjoint], petsc_options_prefix="adjoint_"
     ).solve()
     gradient = ufl.action(ufl.adjoint(dFdbc), adjoint_solution)
 

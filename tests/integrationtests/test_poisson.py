@@ -58,7 +58,15 @@ def test_Poisson_dJdf(poisson_problem):
     )
 
     adjoint_solution = LinearProblem(
-        ufl.adjoint(dFdu), -dJdu, bcs=[bcs_adjoint], petsc_options_prefix="adjoint_"
+        ufl.adjoint(dFdu),
+        -dJdu,
+        bcs=[bcs_adjoint],
+        petsc_options_prefix="adjoint_",
+        petsc_options={
+            "ksp_type": "preonly",
+            "pc_type": "lu",
+            "ksp_error_if_not_converged": True,
+        },
     ).solve()
     gradient = ufl.action(ufl.adjoint(dFdf), adjoint_solution) + dJdf
 
@@ -123,7 +131,15 @@ def test_Poisson_dJdnu(poisson_problem):
     )
 
     adjoint_solution = LinearProblem(
-        ufl.adjoint(dFdu), -dJdu, bcs=[bcs_adjoint], petsc_options_prefix="adjoint_"
+        ufl.adjoint(dFdu),
+        -dJdu,
+        bcs=[bcs_adjoint],
+        petsc_options_prefix="adjoint_",
+        petsc_options={
+            "ksp_type": "preonly",
+            "pc_type": "lu",
+            "ksp_error_if_not_converged": True,
+        },
     ).solve()
     gradient = ufl.action(ufl.adjoint(dFdnu), adjoint_solution) + dJdnu
     gradient = fem.assemble_scalar(fem.form(gradient))
@@ -189,7 +205,15 @@ def test_Poisson_dJdbc(poisson_problem):
     )
 
     adjoint_solution = LinearProblem(
-        ufl.adjoint(dFdu), -dJdu, bcs=[bcs_adjoint], petsc_options_prefix="adjoint_"
+        ufl.adjoint(dFdu),
+        -dJdu,
+        bcs=[bcs_adjoint],
+        petsc_options_prefix="adjoint_",
+        petsc_options={
+            "ksp_type": "preonly",
+            "pc_type": "lu",
+            "ksp_error_if_not_converged": True,
+        },
     ).solve()
     gradient = ufl.action(ufl.adjoint(dFdbc), adjoint_solution)
 

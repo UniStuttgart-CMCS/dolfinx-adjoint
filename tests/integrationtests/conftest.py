@@ -198,9 +198,10 @@ def linear_elasticity_problem():
     boundary_facets = mesh.locate_entities_boundary(
         domain, domain.topology.dim - 1, lambda x: np.isclose(x[0], 0)
     )
-    bc = fem.dirichletbc(
-        u_D, fem.locate_dofs_topological(V, domain.topology.dim - 1, boundary_facets), V
-    )
+
+    bcs_dofs = fem.locate_dofs_topological(V, domain.topology.dim - 1, boundary_facets)
+
+    bc = fem.dirichletbc(u_D, bcs_dofs, V)
 
     problem = fem.petsc.LinearProblem(
         a,
@@ -225,7 +226,7 @@ def linear_elasticity_problem():
         "F": ufl.replace(F, {u: uh}),
         "J_form": J_form,
         "J": J,
-        "bc": bc,
+        "bcs_dofs": bcs_dofs,
     }
 
 

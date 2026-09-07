@@ -43,11 +43,17 @@ def test_material_param_lambda(linear_elasticity_problem):
     F = linear_elasticity_problem["F"]
     J_form = linear_elasticity_problem["J_form"]
     J = linear_elasticity_problem["J"]
-    bc = linear_elasticity_problem["bc"]
+    bcs_dofs = linear_elasticity_problem["bcs_dofs"]
     graph_ = linear_elasticity_problem["graph_"]
 
     dJdu = ufl.derivative(J_form, u)
     dFdu = ufl.derivative(F, u)
+
+    bcs_adjoint = fem.dirichletbc(
+        np.array([0.0, 0.0, 0.0], dtype=ScalarType),
+        bcs_dofs,
+        u.function_space,
+    )
 
     # Define a new form to use ufl.derivative for the derivative of F with respect to λ
     DG0 = fem.functionspace(domain, ("DG", 0))
@@ -56,12 +62,12 @@ def test_material_param_lambda(linear_elasticity_problem):
     F_replace = ufl.replace(F, {lambda_: lambda_func})
     dFdlambda = ufl.derivative(F_replace, lambda_func)
 
-    dJdu = fem.assemble_vector(fem.form(dJdu)).array
-    dFdlambda = fem.assemble_vector(fem.form(dFdlambda)).array
-    dFdu = fem.assemble_matrix(fem.form(dFdu), bcs=[bc]).to_dense()
+    dJdu_vec = fem.assemble_vector(fem.form(dJdu)).array
+    dFdlambda_vec = fem.assemble_vector(fem.form(dFdlambda)).array
+    dFdu_vec = fem.assemble_matrix(fem.form(dFdu), bcs=[bcs_adjoint]).to_dense()
 
-    adjoint_solution = np.linalg.solve(dFdu.transpose(), -dJdu.transpose())
-    dJdlambda = adjoint_solution.transpose() @ dFdlambda
+    adjoint_solution = np.linalg.solve(dFdu_vec.transpose(), -dJdu_vec.transpose())
+    dJdlambda = adjoint_solution.transpose() @ dFdlambda_vec
 
     # Compare automatic differentiation result with explicit adjoint calculation
     assert np.allclose(dJdlambda, graph_.backprop(id(J), id(lambda_)))
@@ -98,11 +104,17 @@ def test_material_param_mu(linear_elasticity_problem):
     F = linear_elasticity_problem["F"]
     J_form = linear_elasticity_problem["J_form"]
     J = linear_elasticity_problem["J"]
-    bc = linear_elasticity_problem["bc"]
+    bcs_dofs = linear_elasticity_problem["bcs_dofs"]
     graph_ = linear_elasticity_problem["graph_"]
 
     dJdu = ufl.derivative(J_form, u)
     dFdu = ufl.derivative(F, u)
+
+    bcs_adjoint = fem.dirichletbc(
+        np.array([0.0, 0.0, 0.0], dtype=ScalarType),
+        bcs_dofs,
+        u.function_space,
+    )
 
     # Define a new form to use ufl.derivative for the derivative of F with respect to μ
     DG0 = fem.functionspace(domain, ("DG", 0))
@@ -111,12 +123,12 @@ def test_material_param_mu(linear_elasticity_problem):
     F_replace = ufl.replace(F, {mu: mu_func})
     dFdmu = ufl.derivative(F_replace, mu_func)
 
-    dJdu = fem.assemble_vector(fem.form(dJdu)).array
-    dFdmu = fem.assemble_vector(fem.form(dFdmu)).array
-    dFdu = fem.assemble_matrix(fem.form(dFdu), bcs=[bc]).to_dense()
+    dJdu_vec = fem.assemble_vector(fem.form(dJdu)).array
+    dFdmu_vec = fem.assemble_vector(fem.form(dFdmu)).array
+    dFdu_vec = fem.assemble_matrix(fem.form(dFdu), bcs=[bcs_adjoint]).to_dense()
 
-    adjoint_solution = np.linalg.solve(dFdu.transpose(), -dJdu.transpose())
-    dJdmu = adjoint_solution.transpose() @ dFdmu
+    adjoint_solution = np.linalg.solve(dFdu_vec.transpose(), -dJdu_vec.transpose())
+    dJdmu = adjoint_solution.transpose() @ dFdmu_vec
 
     # Compare automatic differentiation result with explicit adjoint calculation
     assert np.allclose(dJdmu, graph_.backprop(id(J), id(mu)))

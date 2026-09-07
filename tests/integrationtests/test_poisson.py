@@ -6,10 +6,9 @@ correctly computes gradients using the adjoint method by comparing against
 explicit adjoint calculations.
 """
 
-import dolfinx
 import numpy as np
 import ufl
-from dolfinx import fem
+from dolfinx import fem, la
 from dolfinx.fem.petsc import LinearProblem
 from petsc4py.PETSc import ScalarType
 
@@ -63,8 +62,8 @@ def test_Poisson_dJdf(poisson_problem):
     ).solve()
     gradient = ufl.action(ufl.adjoint(dFdf), adjoint_solution) + dJdf
 
-    gradient_df = dolfinx.fem.assemble_vector(dolfinx.fem.form(gradient))
-    gradient_df.scatter_reverse(dolfinx.la.InsertMode.add)
+    gradient_df = fem.assemble_vector(fem.form(gradient))
+    gradient_df.scatter_reverse(la.InsertMode.add)
     gradient_df.scatter_forward()
 
     # Compare automatic differentiation result with explicit adjoint calculation
@@ -127,7 +126,7 @@ def test_Poisson_dJdnu(poisson_problem):
         ufl.adjoint(dFdu), -dJdu, bcs=[bcs_adjoint], petsc_options_prefix="adjoint_"
     ).solve()
     gradient = ufl.action(ufl.adjoint(dFdnu), adjoint_solution) + dJdnu
-    gradient = dolfinx.fem.assemble_scalar(dolfinx.fem.form(gradient))
+    gradient = fem.assemble_scalar(fem.form(gradient))
 
     # Compare automatic differentiation result with explicit adjoint calculation
     assert np.allclose(graph_.backprop(id(J), id(nu)), gradient)
@@ -194,8 +193,8 @@ def test_Poisson_dJdbc(poisson_problem):
     ).solve()
     gradient = ufl.action(ufl.adjoint(dFdbc), adjoint_solution)
 
-    gradient = dolfinx.fem.assemble_vector(dolfinx.fem.form(gradient))
-    gradient.scatter_reverse(dolfinx.la.InsertMode.add)
+    gradient = fem.assemble_vector(fem.form(gradient))
+    gradient.scatter_reverse(la.InsertMode.add)
     gradient.scatter_forward()
 
     # Extract gradient values only at the boundary

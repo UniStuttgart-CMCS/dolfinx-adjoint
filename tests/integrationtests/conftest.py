@@ -91,7 +91,6 @@ def poisson_problem(cell_type, solver: bool):
         fem.dirichletbc(uD_B, boundary_dofs_B),
     ]
 
-
     # Define the problem solver and solve it
     if solver == "nonlinear":
         problem = fem.petsc.NonlinearProblem(

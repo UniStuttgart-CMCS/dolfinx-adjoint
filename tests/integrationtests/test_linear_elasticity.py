@@ -9,6 +9,7 @@ explicit adjoint calculations.
 import numpy as np
 import ufl
 from dolfinx import fem
+from dolfinx.fem.petsc import LinearProblem
 from petsc4py.PETSc import ScalarType
 
 
@@ -58,16 +59,24 @@ def test_material_param_lambda(linear_elasticity_problem):
     # Define a new form to use ufl.derivative for the derivative of F with respect to λ
     DG0 = fem.functionspace(domain, ("DG", 0))
     lambda_func = fem.Function(DG0, name="lambda")
-    lambda_func.x.array[:] = ScalarType(1.0)
+    lambda_func.x.array[:] = lambda_.value
     F_replace = ufl.replace(F, {lambda_: lambda_func})
     dFdlambda = ufl.derivative(F_replace, lambda_func)
 
-    dJdu_vec = fem.assemble_vector(fem.form(dJdu)).array
-    dFdlambda_vec = fem.assemble_vector(fem.form(dFdlambda)).array
-    dFdu_vec = fem.assemble_matrix(fem.form(dFdu), bcs=[bcs_adjoint]).to_dense()
-
-    adjoint_solution = np.linalg.solve(dFdu_vec.transpose(), -dJdu_vec.transpose())
-    dJdlambda = adjoint_solution.transpose() @ dFdlambda_vec
+    adjoint_solution = LinearProblem(
+        ufl.adjoint(dFdu),
+        -dJdu,
+        bcs=[bcs_adjoint],
+        petsc_options_prefix="adjoint_",
+        petsc_options={
+            "ksp_type": "preonly",
+            "pc_type": "lu",
+            "ksp_error_if_not_converged": True,
+        },
+    ).solve()
+    dJdlambda = fem.assemble_scalar(
+        fem.form(ufl.action(ufl.adjoint(dFdlambda), adjoint_solution))
+    )
 
     # Compare automatic differentiation result with explicit adjoint calculation
     assert np.allclose(dJdlambda, graph_.backprop(id(J), id(lambda_)))
@@ -119,16 +128,24 @@ def test_material_param_mu(linear_elasticity_problem):
     # Define a new form to use ufl.derivative for the derivative of F with respect to μ
     DG0 = fem.functionspace(domain, ("DG", 0))
     mu_func = fem.Function(DG0, name="mu")
-    mu_func.x.array[:] = ScalarType(1.25)
+    mu_func.x.array[:] = mu.value
     F_replace = ufl.replace(F, {mu: mu_func})
     dFdmu = ufl.derivative(F_replace, mu_func)
 
-    dJdu_vec = fem.assemble_vector(fem.form(dJdu)).array
-    dFdmu_vec = fem.assemble_vector(fem.form(dFdmu)).array
-    dFdu_vec = fem.assemble_matrix(fem.form(dFdu), bcs=[bcs_adjoint]).to_dense()
-
-    adjoint_solution = np.linalg.solve(dFdu_vec.transpose(), -dJdu_vec.transpose())
-    dJdmu = adjoint_solution.transpose() @ dFdmu_vec
+    adjoint_solution = LinearProblem(
+        ufl.adjoint(dFdu),
+        -dJdu,
+        bcs=[bcs_adjoint],
+        petsc_options={
+            "ksp_type": "preonly",
+            "pc_type": "lu",
+            "ksp_error_if_not_converged": True,
+        },
+        petsc_options_prefix="adjoint_",
+    ).solve()
+    dJdmu = fem.assemble_scalar(
+        fem.form(ufl.action(ufl.adjoint(dFdmu), adjoint_solution))
+    )
 
     # Compare automatic differentiation result with explicit adjoint calculation
     assert np.allclose(dJdmu, graph_.backprop(id(J), id(mu)))

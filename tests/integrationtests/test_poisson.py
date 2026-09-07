@@ -113,7 +113,7 @@ def test_Poisson_dJdnu(poisson_problem):
 
     DG0 = fem.functionspace(domain, ("DG", 0))
     nu_function = fem.Function(DG0, name="nu")
-    nu_function.x.array[:] = ScalarType(1.0)
+    nu_function.x.array[:] = nu.value
 
     J_form_replaced = ufl.replace(J_form, {nu: nu_function})
     F_replaced = ufl.replace(F, {nu: nu_function})

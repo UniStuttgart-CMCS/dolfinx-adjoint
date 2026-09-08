@@ -80,21 +80,16 @@ def poisson_problem(cell_type, solver: bool):
     boundary_dofs_T = fem.locate_dofs_geometrical(V, lambda x: np.isclose(x[1], 1.0))
     boundary_dofs_B = fem.locate_dofs_geometrical(V, lambda x: np.isclose(x[1], 0.0))
 
+    bcs_dofs = np.concatenate(
+        [boundary_dofs_L, boundary_dofs_R, boundary_dofs_T, boundary_dofs_B]
+    )
+
     bcs = [
         fem.dirichletbc(uD_L, boundary_dofs_L, graph=graph_),
         fem.dirichletbc(uD_R, boundary_dofs_R),
         fem.dirichletbc(uD_T, boundary_dofs_T),
         fem.dirichletbc(uD_B, boundary_dofs_B),
     ]
-
-    # Boundary conditions of adjoint must be set to zero since there cannot be any contribution from the boundary to the gradient of J with respect to variables except for the boundary condition itself.
-    bcs_adjoint = fem.dirichletbc(
-        ScalarType(0.0),
-        np.concatenate(
-            [boundary_dofs_L, boundary_dofs_R, boundary_dofs_T, boundary_dofs_B]
-        ),
-        V,
-    )
 
     # Define the problem solver and solve it
     if solver == "nonlinear":
@@ -150,7 +145,7 @@ def poisson_problem(cell_type, solver: bool):
         "boundary_dofs_L": boundary_dofs_L,
         "J_form": J_form,
         "J": J,
-        "bcs_adjoint": [bcs_adjoint],
+        "bcs_dofs": bcs_dofs,
     }
 
 
@@ -203,9 +198,10 @@ def linear_elasticity_problem():
     boundary_facets = mesh.locate_entities_boundary(
         domain, domain.topology.dim - 1, lambda x: np.isclose(x[0], 0)
     )
-    bc = fem.dirichletbc(
-        u_D, fem.locate_dofs_topological(V, domain.topology.dim - 1, boundary_facets), V
-    )
+
+    bcs_dofs = fem.locate_dofs_topological(V, domain.topology.dim - 1, boundary_facets)
+
+    bc = fem.dirichletbc(u_D, bcs_dofs, V)
 
     problem = fem.petsc.LinearProblem(
         a,
@@ -230,7 +226,7 @@ def linear_elasticity_problem():
         "F": ufl.replace(F, {u: uh}),
         "J_form": J_form,
         "J": J,
-        "bc": bc,
+        "bcs_dofs": bcs_dofs,
     }
 
 
@@ -347,8 +343,10 @@ def stokes_problem():
         (V.sub(0), V_u), 1, ft.indices[ft.values == obstacle_marker]
     )
 
-    bc_dofs_total = np.concatenate(
-        [dofs_walls[0], dofs_inflow[0], dofs_outflow[0], dofs_obstacle[0]]
+    bcs_dofs = np.unique(
+        np.concatenate(
+            [dofs_walls[0], dofs_inflow[0], dofs_outflow[0], dofs_obstacle[0]]
+        )
     )
 
     bcs = [
@@ -407,8 +405,7 @@ def stokes_problem():
         "F": F,
         "J_form": J_form,
         "J": J,
-        "bcs": bcs,
-        "bc_dofs_total": bc_dofs_total,
+        "bcs_dofs": bcs_dofs,
         "dofs_obstacle": dofs_obstacle,
         "dObs": dObs,
     }

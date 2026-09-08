@@ -7,7 +7,8 @@ correctly computes gradients using the adjoint method for time-dependent problem
 
 import numpy as np
 import ufl
-from dolfinx import fem
+from dolfinx import fem, la
+from dolfinx.fem.petsc import LinearProblem
 
 
 def test_Heat_initial(heat_equation_problem):
@@ -54,23 +55,30 @@ def test_Heat_initial(heat_equation_problem):
     dJdu = ufl.derivative(J_form, u_next)
     dJdu_0 = ufl.derivative(J_form, initial_guess)
 
-    dJdu_0 = fem.assemble_vector(fem.form(dJdu_0)).array
-    dJdu = fem.assemble_vector(fem.form(dJdu)).array
-
     rhs = dJdu
 
     for i in range(len(u_iterations) - 1, 0, -1):
         F_i = ufl.replace(F, {u_next: u_iterations[i], u_prev: u_iterations[i - 1]})
         dF_idu_i = ufl.derivative(F_i, u_iterations[i])
-        dF_idu_i = fem.assemble_matrix(fem.form(dF_idu_i)).to_dense()
 
-        lambda_i = np.linalg.solve(dF_idu_i.transpose(), -rhs.transpose())
+        lambda_i = LinearProblem(
+            ufl.adjoint(dF_idu_i),
+            -rhs,
+            petsc_options_prefix="adjoint_",
+            petsc_options={
+                "ksp_type": "preonly",
+                "pc_type": "lu",
+                "ksp_error_if_not_converged": True,
+            },
+        ).solve()
 
         dF_idu_i_1 = ufl.derivative(F_i, u_iterations[i - 1])
-        dF_idu_i_1 = fem.assemble_matrix(fem.form(dF_idu_i_1)).to_dense()
-        rhs = lambda_i.transpose() @ dF_idu_i_1
+        rhs = ufl.action(ufl.adjoint(dF_idu_i_1), lambda_i)
 
     gradient = rhs + dJdu_0
+    gradient = fem.assemble_vector(fem.form(gradient))
+    gradient.scatter_reverse(la.InsertMode.add)
+    gradient.scatter_forward()
 
     # Compare automatic differentiation result with explicit adjoint calculation
-    assert np.allclose(graph_.backprop(id(J), id(initial_guess)), gradient)
+    assert np.allclose(graph_.backprop(id(J), id(initial_guess)), gradient.array)

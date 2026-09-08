@@ -6,10 +6,9 @@ correctly computes gradients using the adjoint method by comparing against
 explicit adjoint calculations.
 """
 
-import dolfinx
 import numpy as np
 import ufl
-from dolfinx import fem
+from dolfinx import fem, la
 from dolfinx.fem.petsc import LinearProblem
 from petsc4py.PETSc import ScalarType
 
@@ -42,7 +41,7 @@ def test_Poisson_dJdf(poisson_problem):
     uh = poisson_problem["uh"]
     f = poisson_problem["f"]
     J_form = poisson_problem["J_form"]
-    bcs_adjoint = poisson_problem["bcs_adjoint"]
+    bcs_dofs = poisson_problem["bcs_dofs"]
     graph_ = poisson_problem["graph_"]
     J = poisson_problem["J"]
 
@@ -51,13 +50,28 @@ def test_Poisson_dJdf(poisson_problem):
     dJdu = ufl.derivative(J_form, uh)
     dJdf = ufl.derivative(J_form, f)
 
+    # Boundary conditions of adjoint must be set to zero since there cannot be any contribution from the boundary to the gradient of J with respect to variables except for the boundary condition itself.
+    bcs_adjoint = fem.dirichletbc(
+        ScalarType(0.0),
+        bcs_dofs,
+        uh.function_space,
+    )
+
     adjoint_solution = LinearProblem(
-        ufl.adjoint(dFdu), -dJdu, bcs=bcs_adjoint, petsc_options_prefix="adjoint_"
+        ufl.adjoint(dFdu),
+        -dJdu,
+        bcs=[bcs_adjoint],
+        petsc_options_prefix="adjoint_",
+        petsc_options={
+            "ksp_type": "preonly",
+            "pc_type": "lu",
+            "ksp_error_if_not_converged": True,
+        },
     ).solve()
     gradient = ufl.action(ufl.adjoint(dFdf), adjoint_solution) + dJdf
 
-    gradient_df = dolfinx.fem.assemble_vector(dolfinx.fem.form(gradient))
-    gradient_df.scatter_reverse(dolfinx.la.InsertMode.add)
+    gradient_df = fem.assemble_vector(fem.form(gradient))
+    gradient_df.scatter_reverse(la.InsertMode.add)
     gradient_df.scatter_forward()
 
     # Compare automatic differentiation result with explicit adjoint calculation
@@ -93,13 +107,13 @@ def test_Poisson_dJdnu(poisson_problem):
     uh = poisson_problem["uh"]
     nu = poisson_problem["nu"]
     J_form = poisson_problem["J_form"]
-    bcs_adjoint = poisson_problem["bcs_adjoint"]
+    bcs_dofs = poisson_problem["bcs_dofs"]
     graph_ = poisson_problem["graph_"]
     J = poisson_problem["J"]
 
     DG0 = fem.functionspace(domain, ("DG", 0))
     nu_function = fem.Function(DG0, name="nu")
-    nu_function.x.array[:] = ScalarType(1.0)
+    nu_function.x.array[:] = nu.value
 
     J_form_replaced = ufl.replace(J_form, {nu: nu_function})
     F_replaced = ufl.replace(F, {nu: nu_function})
@@ -109,11 +123,26 @@ def test_Poisson_dJdnu(poisson_problem):
     dFdnu = ufl.derivative(F_replaced, nu_function)
     dFdu = ufl.derivative(F, uh)
 
+    # Boundary conditions of adjoint must be set to zero since there cannot be any contribution from the boundary to the gradient of J with respect to variables except for the boundary condition itself.
+    bcs_adjoint = fem.dirichletbc(
+        ScalarType(0.0),
+        bcs_dofs,
+        uh.function_space,
+    )
+
     adjoint_solution = LinearProblem(
-        ufl.adjoint(dFdu), -dJdu, bcs=bcs_adjoint, petsc_options_prefix="adjoint_"
+        ufl.adjoint(dFdu),
+        -dJdu,
+        bcs=[bcs_adjoint],
+        petsc_options_prefix="adjoint_",
+        petsc_options={
+            "ksp_type": "preonly",
+            "pc_type": "lu",
+            "ksp_error_if_not_converged": True,
+        },
     ).solve()
     gradient = ufl.action(ufl.adjoint(dFdnu), adjoint_solution) + dJdnu
-    gradient = dolfinx.fem.assemble_scalar(dolfinx.fem.form(gradient))
+    gradient = fem.assemble_scalar(fem.form(gradient))
 
     # Compare automatic differentiation result with explicit adjoint calculation
     assert np.allclose(graph_.backprop(id(J), id(nu)), gradient)
@@ -160,7 +189,7 @@ def test_Poisson_dJdbc(poisson_problem):
     uD_L = poisson_problem["uD_L"]
     J_form = poisson_problem["J_form"]
     boundary_dofs_L = poisson_problem["boundary_dofs_L"]
-    bcs_adjoint = poisson_problem["bcs_adjoint"]
+    bcs_dofs = poisson_problem["bcs_dofs"]
     graph_ = poisson_problem["graph_"]
     J = poisson_problem["J"]
 
@@ -168,13 +197,28 @@ def test_Poisson_dJdbc(poisson_problem):
     dJdu = ufl.derivative(J_form, uh)
     dFdbc = ufl.derivative(F, uh, ufl.TrialFunction(uh.function_space))
 
+    # Boundary conditions of adjoint must be set to zero since there cannot be any contribution from the boundary to the gradient of J with respect to variables except for the boundary condition itself.
+    bcs_adjoint = fem.dirichletbc(
+        ScalarType(0.0),
+        bcs_dofs,
+        uh.function_space,
+    )
+
     adjoint_solution = LinearProblem(
-        ufl.adjoint(dFdu), -dJdu, bcs=bcs_adjoint, petsc_options_prefix="adjoint_"
+        ufl.adjoint(dFdu),
+        -dJdu,
+        bcs=[bcs_adjoint],
+        petsc_options_prefix="adjoint_",
+        petsc_options={
+            "ksp_type": "preonly",
+            "pc_type": "lu",
+            "ksp_error_if_not_converged": True,
+        },
     ).solve()
     gradient = ufl.action(ufl.adjoint(dFdbc), adjoint_solution)
 
-    gradient = dolfinx.fem.assemble_vector(dolfinx.fem.form(gradient))
-    gradient.scatter_reverse(dolfinx.la.InsertMode.add)
+    gradient = fem.assemble_vector(fem.form(gradient))
+    gradient.scatter_reverse(la.InsertMode.add)
     gradient.scatter_forward()
 
     # Extract gradient values only at the boundary

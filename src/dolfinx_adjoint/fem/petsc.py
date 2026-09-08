@@ -7,11 +7,7 @@ from dolfinx.fem.petsc import (
     NewtonSolverNonlinearProblem as NewtonSolverNonlinearProblemBase,
 )
 from dolfinx.fem.petsc import NonlinearProblem as NonlinearProblemBase
-from dolfinx.fem.petsc import (
-    assign,
-    create_vector,
-    set_bc,
-)
+from dolfinx.fem.petsc import assign, create_vector, set_bc
 from petsc4py import PETSc
 
 import dolfinx_adjoint.graph as graph

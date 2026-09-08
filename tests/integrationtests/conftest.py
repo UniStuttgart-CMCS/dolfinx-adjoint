@@ -36,8 +36,18 @@ def solver(request):
     return request.param
 
 
+@pytest.fixture(
+    scope="module",
+    params=["inflow", "full_boundary"],
+    ids=["inflow", "full-boundary"],
+)
+def boundary_condition(request):
+    """Return the selected Poisson boundary-condition type."""
+    return request.param
+
+
 @pytest.fixture(scope="module")
-def poisson_problem(cell_type, solver: bool):
+def poisson_problem(cell_type, solver: bool, boundary_condition):
     """Set up the Poisson problem that will be used in all tests."""
     # Create graph object to store the computational graph
     graph_ = Graph()
@@ -66,8 +76,8 @@ def poisson_problem(cell_type, solver: bool):
     # Define the boundary and the boundary conditions
     domain.topology.create_connectivity(domain.topology.dim - 1, domain.topology.dim)
 
-    uD_L = fem.Function(V, name="u_D", graph=graph_)
-    uD_L.interpolate(lambda x: 1.0 + 0.0 * x[0])
+    uD_control = fem.Function(V, name="u_D", graph=graph_)
+    uD_control.interpolate(lambda x: 1.0 + 0.0 * x[0])
     uD_R = fem.Function(V, name="u_D")
     uD_R.interpolate(lambda x: 1.0 + 0.0 * x[0])
     uD_T = fem.Function(V, name="u_D")
@@ -85,16 +95,27 @@ def poisson_problem(cell_type, solver: bool):
     boundary_dofs_T = fem.locate_dofs_geometrical(V, lambda x: np.isclose(x[1], 1.0))
     boundary_dofs_B = fem.locate_dofs_geometrical(V, lambda x: np.isclose(x[1], 0.0))
 
-    bcs_dofs = np.concatenate(
-        [boundary_dofs_L, boundary_dofs_R, boundary_dofs_T, boundary_dofs_B]
-    )
-
-    bcs = [
-        fem.dirichletbc(uD_L, boundary_dofs_L, graph=graph_),
-        fem.dirichletbc(uD_R, boundary_dofs_R),
-        fem.dirichletbc(uD_T, boundary_dofs_T),
-        fem.dirichletbc(uD_B, boundary_dofs_B),
-    ]
+    if boundary_condition == "inflow":
+        control_dofs = boundary_dofs_L
+        bcs_dofs = np.concatenate(
+            [boundary_dofs_L, boundary_dofs_R, boundary_dofs_T, boundary_dofs_B]
+        )
+        bcs = [
+            fem.dirichletbc(uD_control, boundary_dofs_L, graph=graph_),
+            fem.dirichletbc(uD_R, boundary_dofs_R),
+            fem.dirichletbc(uD_T, boundary_dofs_T),
+            fem.dirichletbc(uD_B, boundary_dofs_B),
+        ]
+    elif boundary_condition == "full_boundary":
+        exterior_facets = mesh.exterior_facet_indices(domain.topology)
+        boundary_dofs = fem.locate_dofs_topological(
+            V, domain.topology.dim - 1, exterior_facets
+        )
+        control_dofs = boundary_dofs
+        bcs_dofs = boundary_dofs
+        bcs = [fem.dirichletbc(uD_control, boundary_dofs, graph=graph_)]
+    else:
+        raise ValueError(f"Unknown boundary condition: {boundary_condition}")
 
     # Define the problem solver and solve it
     petsc_options = {
@@ -149,8 +170,8 @@ def poisson_problem(cell_type, solver: bool):
         "f": f,
         "nu": nu,
         "F": F,
-        "uD_L": uD_L,
-        "boundary_dofs_L": boundary_dofs_L,
+        "uD_control": uD_control,
+        "control_dofs": control_dofs,
         "J_form": J_form,
         "J": J,
         "bcs_dofs": bcs_dofs,

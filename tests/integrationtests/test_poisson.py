@@ -186,9 +186,9 @@ def test_Poisson_dJdbc(poisson_problem):
     """
     F = poisson_problem["F"]
     uh = poisson_problem["uh"]
-    uD_L = poisson_problem["uD_L"]
+    uD_control = poisson_problem["uD_control"]
     J_form = poisson_problem["J_form"]
-    boundary_dofs_L = poisson_problem["boundary_dofs_L"]
+    control_dofs = poisson_problem["control_dofs"]
     bcs_dofs = poisson_problem["bcs_dofs"]
     graph_ = poisson_problem["graph_"]
     J = poisson_problem["J"]
@@ -223,10 +223,10 @@ def test_Poisson_dJdbc(poisson_problem):
 
     # Extract gradient values only at the boundary
     matrix = np.zeros((len(gradient.array), len(gradient.array)))
-    for index in boundary_dofs_L:
+    for index in control_dofs:
         matrix[index, index] = 1.0
 
     gradient = matrix @ gradient.array
 
     # Compare automatic differentiation result with explicit adjoint calculation
-    assert np.allclose(graph_.backprop(id(J), id(uD_L)), gradient)
+    assert np.allclose(graph_.backprop(id(J), id(uD_control)), gradient)

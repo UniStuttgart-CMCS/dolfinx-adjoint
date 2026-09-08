@@ -19,13 +19,13 @@ cd dolfinx-adjoint
 pip install -e .
 ```
 
-Dependency requirements are declared in [pyproject.toml](pyproject.toml):
+Dependency requirements are declared in [pyproject.toml](pyproject.toml) including:
 - Python >= 3.12
 - DOLFINx >= 0.10.0
 
+We refer to the [DOLFINx installation instructions](https://github.com/FEniCS/dolfinx/blob/main/README.md#installation) for installing DOLFINx.
 CI targets DOLFINx 0.11.0. Compatibility with the declared minimum, 0.10.0,
 is not currently checked in CI.
-
 For demos and tests, use `pip install -e ".[all]"`.
 
 ## Quick Example

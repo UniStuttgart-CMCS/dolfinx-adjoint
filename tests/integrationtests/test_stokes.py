@@ -50,7 +50,7 @@ def test_Stokes_dJdnu(stokes_problem):
 
     DG0 = fem.functionspace(mesh, ("DG", 0))
     nu_function = fem.Function(DG0, name="nu")
-    nu_function.x.array[:] = ScalarType(1.0)
+    nu_function.x.array[:] = nu.value
 
     J_form_replaced = ufl.replace(J_form, {nu: nu_function})
     F_replaced = ufl.replace(F, {nu: nu_function})
@@ -60,17 +60,17 @@ def test_Stokes_dJdnu(stokes_problem):
     dFdnu = ufl.derivative(F_replaced, nu_function)
     dFdu = ufl.derivative(F, up)
 
-    dJdu = fem.assemble_vector(fem.form(dJdu)).array
-    dJdnu = fem.assemble_scalar(fem.form(dJdnu))
-    dFdnu = fem.assemble_vector(fem.form(dFdnu)).array
-    dFdu = fem.assemble_matrix(fem.form(dFdu), bcs=bcs).to_dense()
+    dJdu_vec = fem.assemble_vector(fem.form(dJdu)).array
+    dJdnu_vec = fem.assemble_scalar(fem.form(dJdnu))
+    dFdnu_vec = fem.assemble_vector(fem.form(dFdnu)).array
+    dFdu_vec = fem.assemble_matrix(fem.form(dFdu), bcs=bcs).to_dense()
 
     # Apply the boundary conditions to the rhs of the adjoint problem
     for bc_dof in bc_dofs_total:
-        dJdu[int(bc_dof)] = 0
+        dJdu_vec[int(bc_dof)] = 0
 
-    adjoint_solution = np.linalg.solve(dFdu.transpose(), -dJdu.transpose())
-    gradient = adjoint_solution.transpose() @ dFdnu + dJdnu
+    adjoint_solution = np.linalg.solve(dFdu_vec.transpose(), -dJdu_vec.transpose())
+    gradient = adjoint_solution.transpose() @ dFdnu_vec + dJdnu_vec
 
     assert np.allclose(graph_.backprop(id(J), id(nu)), gradient)
 
@@ -122,25 +122,25 @@ def test_Stokes_dJdg(stokes_problem):
     argument = ufl.TrialFunction(V)
     dFdu = ufl.derivative(F, up, argument)
 
-    dJdu = fem.assemble_vector(fem.form(dJdu)).array
-    dJdg = fem.assemble_vector(fem.form(dJdg)).array
+    dJdu_vec = fem.assemble_vector(fem.form(dJdu)).array
+    dJdg_vec = fem.assemble_vector(fem.form(dJdg)).array
 
-    dFdg = fem.assemble_matrix(
+    dFdg_vec = fem.assemble_matrix(
         fem.form(ufl.derivative(F, up, ufl.TrialFunction(up.function_space)))
     ).to_dense()
-    dFdu = fem.assemble_matrix(fem.form(dFdu), bcs=bcs).to_dense()
+    dFdu_vec = fem.assemble_matrix(fem.form(dFdu), bcs=bcs).to_dense()
 
     # Apply the boundary conditions to the rhs of the adjoint problem
     for bc_dof in bc_dofs_total:
-        dJdu[int(bc_dof)] = 0
+        dJdu_vec[int(bc_dof)] = 0
 
-    adjoint_solution = np.linalg.solve(dFdu.transpose(), -dJdu.transpose())
+    adjoint_solution = np.linalg.solve(dFdu_vec.transpose(), -dJdu_vec.transpose())
 
-    gradient = adjoint_solution.transpose() @ dFdg
+    gradient = adjoint_solution.transpose() @ dFdg_vec
 
     matrix = np.zeros((len(gradient), len(gradient)))
     for index in dofs_obstacle[0]:
         matrix[index, index] = 1.0
 
-    gradient = (matrix @ gradient)[V_u_map] + dJdg
+    gradient = (matrix @ gradient)[V_u_map] + dJdg_vec
     assert np.allclose(gradient, graph_.backprop(id(J), id(g)))

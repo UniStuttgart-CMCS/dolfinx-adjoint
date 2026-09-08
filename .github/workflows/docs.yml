@@ -9,7 +9,7 @@ jobs:
   docs:
     name: Build docs with Sphinx
     runs-on: ubuntu-latest
-    container: ghcr.io/fenics/dolfinx/dolfinx:v0.10.0
+    container: ghcr.io/fenics/dolfinx/dolfinx:v0.11.0
 
     steps:
       - uses: actions/checkout@v4
@@ -17,7 +17,7 @@ jobs:
       - name: Install Sphinx
         run: |
           python3 -m pip install --upgrade pip
-          python3 -m pip install sphinx sphinx-rtd-theme sphinx-design networkx
+          python3 -m pip install . sphinx sphinx-rtd-theme sphinx-design
 
       - name: Build documentation
         run: |

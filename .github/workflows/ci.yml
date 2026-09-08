@@ -7,13 +7,13 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
-    container: ghcr.io/fenics/dolfinx/dolfinx:v0.10.0
+    container: ghcr.io/fenics/dolfinx/dolfinx:v0.11.0
 
     steps:
       - uses: actions/checkout@v4
 
       - name: Install package and test dependencies
-        run: python3 -m pip install .[test]
+        run: python3 -m pip install ".[test]"
 
       - name: Lint with black
         run: black --check --diff src/ tests/

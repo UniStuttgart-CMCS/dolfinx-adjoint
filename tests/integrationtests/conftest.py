@@ -179,6 +179,73 @@ def poisson_problem(cell_type, solver: bool, boundary_condition):
 
 
 @pytest.fixture(scope="module")
+def plane_elasticity_problem():
+    """Set up a plane elasticity problem with a controlled Dirichlet boundary."""
+    graph_ = Graph()
+
+    domain = mesh.create_unit_square(MPI.COMM_WORLD, 64, 64, mesh.CellType.triangle)
+    V = fem.functionspace(domain, ("Lagrange", 1, (domain.geometry.dim,)))
+
+    mu = fem.Constant(domain, ScalarType(1.0), name="μ")
+    lambda_ = fem.Constant(domain, ScalarType(1.25), name="λ")
+    rho = 1.0
+    g = 0.016
+
+    def epsilon(u):
+        return ufl.sym(ufl.grad(u))
+
+    def sigma(u):
+        return lambda_ * ufl.nabla_div(u) * ufl.Identity(len(u)) + 2 * mu * epsilon(u)
+
+    uh = fem.Function(V, name="u", graph=graph_)
+    u = ufl.TrialFunction(V)
+    v = ufl.TestFunction(V)
+    f = fem.Constant(domain, ScalarType((0.0, -rho * g)))
+
+    a = ufl.inner(sigma(u), epsilon(v)) * ufl.dx
+    L = ufl.dot(f, v) * ufl.dx
+    F = a - L
+
+    domain.topology.create_connectivity(domain.topology.dim - 1, domain.topology.dim)
+
+    uD_control = fem.Function(V, name="u_D", graph=graph_)
+    uD_control.interpolate(lambda x: np.stack((0.5 + 0.0 * x[0], 0.25 + 0.0 * x[1])))
+    control_dofs = fem.locate_dofs_geometrical(V, lambda x: np.isclose(x[1], 0.0))
+
+    bcs = [fem.dirichletbc(uD_control, control_dofs, graph=graph_)]
+
+    problem = fem.petsc.LinearProblem(
+        a,
+        L,
+        u=uh,
+        bcs=bcs,
+        petsc_options_prefix="plane_elasticity_",
+        petsc_options={
+            "ksp_type": "preonly",
+            "pc_type": "lu",
+            "ksp_error_if_not_converged": True,
+        },
+        graph=graph_,
+    )
+    problem.solve(graph=graph_)
+
+    J_form = 0.5 * ufl.inner(uh, uh) * ufl.dx
+    J = fem.assemble_scalar(fem.form(J_form, graph=graph_), graph=graph_)
+
+    return {
+        "graph_": graph_,
+        "domain": domain,
+        "V": V,
+        "uh": uh,
+        "F": ufl.replace(F, {u: uh}),
+        "uD_control": uD_control,
+        "control_dofs": control_dofs,
+        "J_form": J_form,
+        "J": J,
+    }
+
+
+@pytest.fixture(scope="module")
 def linear_elasticity_problem():
     """Set up the linear elasticity problem that will be used in all tests."""
     # Scaled variable

@@ -92,12 +92,23 @@ def poisson_problem(cell_type, solver: bool):
     ]
 
     # Define the problem solver and solve it
+    petsc_options = {
+        "ksp_type": "preonly",
+        "pc_type": "lu",
+        "ksp_error_if_not_converged": True,
+    }
     if solver == "nonlinear":
         problem = fem.petsc.NonlinearProblem(
             F,
             uh,
             bcs=bcs,
             petsc_options_prefix="forward_nonlinear",
+            petsc_options={
+                **petsc_options,
+                "snes_atol": 1e-12,
+                "snes_rtol": 1e-12,
+                "snes_error_if_not_converged": True,
+            },
             graph=graph_,
         )
         problem.solve(graph=graph_)
@@ -107,6 +118,7 @@ def poisson_problem(cell_type, solver: bool):
             u=uh,
             bcs=bcs,
             petsc_options_prefix="forward_linear",
+            petsc_options=petsc_options,
             graph=graph_,
         )
         problem.solve(graph=graph_)

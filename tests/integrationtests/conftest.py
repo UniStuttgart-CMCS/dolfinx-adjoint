@@ -75,7 +75,12 @@ def poisson_problem(cell_type, solver: bool):
     uD_B = fem.Function(V, name="u_D")
     uD_B.interpolate(lambda x: 1.0 + 0.0 * x[1])
 
-    boundary_dofs_L = fem.locate_dofs_geometrical(V, lambda x: np.isclose(x[0], 0.0))
+    boundary_dofs_L = fem.locate_dofs_geometrical(
+        V,
+        lambda x: np.isclose(x[0], 0.0)
+        & ~np.isclose(x[1], 0.0)
+        & ~np.isclose(x[1], 1.0),
+    )
     boundary_dofs_R = fem.locate_dofs_geometrical(V, lambda x: np.isclose(x[0], 1.0))
     boundary_dofs_T = fem.locate_dofs_geometrical(V, lambda x: np.isclose(x[1], 1.0))
     boundary_dofs_B = fem.locate_dofs_geometrical(V, lambda x: np.isclose(x[1], 0.0))

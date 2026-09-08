@@ -13,6 +13,25 @@ def _convergence_rates(errors: np.ndarray, steps: np.ndarray) -> list:
     return rates
 
 
+@pytest.mark.skipif(
+    MPI.COMM_WORLD.size > 1,
+    reason="Boundary dof ownership is checked locally in this test",
+)
+def test_Poisson_controlled_boundary_dofs(poisson_problem):
+    """Check the open controlled boundary in serial."""
+    uD_L = poisson_problem["uD_L"]
+    controlled_dofs = poisson_problem["boundary_dofs_L"]
+    assert controlled_dofs.size > 0
+    dof_coordinates = uD_L.function_space.tabulate_dof_coordinates()
+    controlled_coordinates = dof_coordinates[controlled_dofs]
+    invalid = np.count_nonzero(
+        ~np.isclose(controlled_coordinates[:, 0], 0.0)
+        | np.isclose(controlled_coordinates[:, 1], 0.0)
+        | np.isclose(controlled_coordinates[:, 1], 1.0)
+    )
+    assert invalid == 0
+
+
 def test_Poisson_graph_recalculate(poisson_problem):
     """Ensure graph.recalculate updates J after modifying f."""
     graph_ = poisson_problem["graph_"]

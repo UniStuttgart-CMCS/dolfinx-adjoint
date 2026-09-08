@@ -180,9 +180,18 @@ def test_Poisson_dJdbc(poisson_problem):
     and then compute the gradient of J(u) with respect to u_D using (3.3).
         dJ/du_D = λᵀ * ∂F/∂u_D + ∂J/∂u_D                            (3.5)
 
-    Here ∂J/∂u_D is not defined. Since the function on the boundary u_D is defined for Ω and not for ∂Ω,
-    especially not the part of the boundary where the boundary condition is applied. We need to extract these values
-    and set everything else to zero.
+    The adjoint problem (3.4) is solved with homogeneous conditions on all constrained dofs Γ,
+    which gives λ_Γ = 0. This is what makes λᵀ * ∂F/∂u_D reduce to the lifting contribution
+    alone, since the rows of ∂F/∂u_D belonging to Γ are then annihilated.
+
+    The remaining term ∂J/∂u_D is not zero. The objective J is not an explicit function of u_D,
+    but the lifted system enforces u = u_D on Γ exactly, so a perturbation of u_D changes the
+    solution values on Γ one-to-one. The direct contribution is therefore ∂J/∂u restricted to
+    Γ, which is the same vector that forms the right-hand side of the adjoint problem.
+
+    Both contributions are only meaningful on the controlled dofs: the function u_D is defined
+    on all of Ω and not only on the part of ∂Ω where the boundary condition is applied. We
+    extract those values and set everything else to zero.
     """
     F = poisson_problem["F"]
     uh = poisson_problem["uh"]
@@ -221,12 +230,18 @@ def test_Poisson_dJdbc(poisson_problem):
     gradient.scatter_reverse(la.InsertMode.add)
     gradient.scatter_forward()
 
+    # Direct contribution ∂J/∂u_D of (3.5): since u = u_D holds exactly on the constrained
+    # dofs, a perturbation of u_D moves the solution there one-to-one.
+    dJdu_vec = fem.assemble_vector(fem.form(dJdu))
+    dJdu_vec.scatter_reverse(la.InsertMode.add)
+    dJdu_vec.scatter_forward()
+
     # Extract gradient values only at the boundary
     matrix = np.zeros((len(gradient.array), len(gradient.array)))
     for index in control_dofs:
         matrix[index, index] = 1.0
 
-    gradient = matrix @ gradient.array
+    gradient = matrix @ (gradient.array + dJdu_vec.array)
 
     # Compare automatic differentiation result with explicit adjoint calculation
     assert np.allclose(graph_.backprop(id(J), id(uD_control)), gradient)

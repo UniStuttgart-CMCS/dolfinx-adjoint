@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/unistuttgart-cmcs/dolfinx-adjoint/actions/workflows/ci.yml/badge.svg)](https://github.com/unistuttgart-cmcs/dolfinx-adjoint/actions/workflows/ci.yml)
 [![Docs](https://github.com/unistuttgart-cmcs/dolfinx-adjoint/actions/workflows/docs-publish.yml/badge.svg)](https://unistuttgart-cmcs.github.io/dolfinx-adjoint/)
-![DOLFINx >= 0.10.0](https://img.shields.io/badge/DOLFINx-%3E%3D0.10.0-orange)
+![Latest supported DOLFINx: 0.11.0](https://img.shields.io/badge/DOLFINx%20latest%20supported-0.11.0-orange)
 
 Automatic differentiation for [DOLFINx](https://github.com/FEniCS/dolfinx) using the adjoint method.
 Efficient sensitivity analysis and gradient-based optimization for finite element simulations.
@@ -19,7 +19,14 @@ cd dolfinx-adjoint
 pip install -e .
 ```
 
-Requires Python >= 3.12 and [DOLFINx](https://github.com/FEniCS/dolfinx) >= 0.10.0. For demos and tests, use `pip install -e ".[all]"`.
+Dependency requirements are declared in [pyproject.toml](pyproject.toml) including:
+- Python >= 3.12
+- DOLFINx >= 0.10.0
+
+We refer to the [DOLFINx installation instructions](https://github.com/FEniCS/dolfinx/blob/main/README.md#installation) for installing DOLFINx.
+CI targets DOLFINx 0.11.0. Compatibility with the declared minimum, 0.10.0,
+is not currently checked in CI.
+For demos and tests, use `pip install -e ".[all]"`.
 
 ## Quick Example
 

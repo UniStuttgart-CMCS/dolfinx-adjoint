@@ -16,7 +16,7 @@ from dolfinx.io import gmsh as gmshio
 from mpi4py import MPI
 from petsc4py.PETSc import ScalarType
 
-from dolfinx_adjoint import Graph, fem, nls
+from dolfinx_adjoint import Graph, fem
 
 
 @pytest.fixture(
@@ -30,7 +30,7 @@ def cell_type(request):
 
 @pytest.fixture(
     scope="module",
-    params=["nonlinear", "nonlinear_newton", "linear"],
+    params=["nonlinear", "linear"],
 )
 def solver(request):
     return request.param
@@ -101,15 +101,6 @@ def poisson_problem(cell_type, solver: bool):
             graph=graph_,
         )
         problem.solve(graph=graph_)
-    elif solver == "nonlinear_newton":
-        problem = fem.petsc.NewtonSolverNonlinearProblem(
-            F,
-            uh,
-            bcs=bcs,
-            graph=graph_,
-        )
-        solver = nls.petsc.NewtonSolver(MPI.COMM_WORLD, problem, graph=graph_)
-        solver.solve(uh, graph=graph_)
     elif solver == "linear":
         problem = fem.petsc.LinearProblem(
             *ufl.system(F),
@@ -438,16 +429,22 @@ def heat_equation_problem():
     fdim = tdim - 1
     domain.topology.create_connectivity(fdim, tdim)
 
-    F = (
-        ufl.inner((u_next - u_prev) / dt_constant, v) * ufl.dx
-        + ufl.inner(ufl.grad(u_next), ufl.grad(v)) * ufl.dx
+    u = ufl.TrialFunction(V)
+    a = (
+        ufl.inner(u / dt_constant, v) * ufl.dx
+        + ufl.inner(ufl.grad(u), ufl.grad(v)) * ufl.dx
     )
-    problem = fem.petsc.NewtonSolverNonlinearProblem(F, u_next)
-    solver = nls.petsc.NewtonSolver(MPI.COMM_WORLD, problem)
+    L = ufl.inner(u_prev / dt_constant, v) * ufl.dx
+    problem = fem.petsc.LinearProblem(
+        a,
+        L,
+        u=u_next,
+        petsc_options_prefix="forward_linear",
+    )
 
     t = 0.0
     while t < T:
-        solver.solve(u_next)
+        problem.solve()
         u_prev.x.array[:] = u_next.x.array[:]
         t += dt
     true_data = u_next.copy()

@@ -103,8 +103,6 @@ operations on the computational graph:
      - Implicit adjoint solve for linear systems
    * - ``fem.petsc.NonlinearProblem``
      - Implicit adjoint solve for nonlinear systems
-   * - ``nls.petsc.NewtonSolver``
-     - Newton solver with graph-tracked iterations
 
 All overloaded objects accept an optional ``graph=`` keyword argument. When omitted,
 they behave identically to their DOLFINx counterparts.
@@ -122,6 +120,9 @@ Quick Start
    cd dolfinx-adjoint && pip install -e .
 
 Requires Python >= 3.12 and `DOLFINx <https://github.com/FEniCS/dolfinx>`_ >= 0.10.0.
+CI targets DOLFINx 0.11.0. Compatibility with the declared minimum, 0.10.0,
+is not currently checked in CI.
+
 For demos and tests, use ``pip install -e ".[all]"``.
 
 **Usage** -- compute dJ/df for a Poisson problem:

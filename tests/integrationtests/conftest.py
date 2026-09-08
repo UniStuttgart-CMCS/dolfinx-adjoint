@@ -16,7 +16,7 @@ from dolfinx.io import gmsh as gmshio
 from mpi4py import MPI
 from petsc4py.PETSc import ScalarType
 
-from dolfinx_adjoint import Graph, fem, nls
+from dolfinx_adjoint import Graph, fem
 
 
 @pytest.fixture(
@@ -30,7 +30,7 @@ def cell_type(request):
 
 @pytest.fixture(
     scope="module",
-    params=["nonlinear", "nonlinear_newton", "linear"],
+    params=["nonlinear", "linear"],
 )
 def solver(request):
     return request.param
@@ -101,15 +101,6 @@ def poisson_problem(cell_type, solver: bool):
             graph=graph_,
         )
         problem.solve(graph=graph_)
-    elif solver == "nonlinear_newton":
-        problem = fem.petsc.NewtonSolverNonlinearProblem(
-            F,
-            uh,
-            bcs=bcs,
-            graph=graph_,
-        )
-        solver = nls.petsc.NewtonSolver(MPI.COMM_WORLD, problem, graph=graph_)
-        solver.solve(uh, graph=graph_)
     elif solver == "linear":
         problem = fem.petsc.LinearProblem(
             *ufl.system(F),

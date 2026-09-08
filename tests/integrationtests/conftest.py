@@ -343,8 +343,10 @@ def stokes_problem():
         (V.sub(0), V_u), 1, ft.indices[ft.values == obstacle_marker]
     )
 
-    bc_dofs_total = np.concatenate(
-        [dofs_walls[0], dofs_inflow[0], dofs_outflow[0], dofs_obstacle[0]]
+    bcs_dofs = np.unique(
+        np.concatenate(
+            [dofs_walls[0], dofs_inflow[0], dofs_outflow[0], dofs_obstacle[0]]
+        )
     )
 
     bcs = [
@@ -403,8 +405,7 @@ def stokes_problem():
         "F": F,
         "J_form": J_form,
         "J": J,
-        "bcs": bcs,
-        "bc_dofs_total": bc_dofs_total,
+        "bcs_dofs": bcs_dofs,
         "dofs_obstacle": dofs_obstacle,
         "dObs": dObs,
     }

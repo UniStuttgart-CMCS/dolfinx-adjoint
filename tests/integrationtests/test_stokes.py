@@ -8,8 +8,8 @@ explicit adjoint calculations.
 
 import numpy as np
 import ufl
-from dolfinx import fem
-from petsc4py.PETSc import ScalarType
+from dolfinx import fem, la
+from dolfinx.fem.petsc import LinearProblem
 
 
 def test_Stokes_dJdnu(stokes_problem):
@@ -44,8 +44,7 @@ def test_Stokes_dJdnu(stokes_problem):
     F = stokes_problem["F"]
     J_form = stokes_problem["J_form"]
     J = stokes_problem["J"]
-    bcs = stokes_problem["bcs"]
-    bc_dofs_total = stokes_problem["bc_dofs_total"]
+    bcs_dofs = stokes_problem["bcs_dofs"]
     graph_ = stokes_problem["graph_"]
 
     DG0 = fem.functionspace(mesh, ("DG", 0))
@@ -60,17 +59,23 @@ def test_Stokes_dJdnu(stokes_problem):
     dFdnu = ufl.derivative(F_replaced, nu_function)
     dFdu = ufl.derivative(F, up)
 
-    dJdu_vec = fem.assemble_vector(fem.form(dJdu)).array
-    dJdnu_vec = fem.assemble_scalar(fem.form(dJdnu))
-    dFdnu_vec = fem.assemble_vector(fem.form(dFdnu)).array
-    dFdu_vec = fem.assemble_matrix(fem.form(dFdu), bcs=bcs).to_dense()
+    # Homogeneous conditions on all constrained velocity and pressure DOFs
+    zero = fem.Function(up.function_space)
+    bcs_adjoint = fem.dirichletbc(zero, bcs_dofs)
 
-    # Apply the boundary conditions to the rhs of the adjoint problem
-    for bc_dof in bc_dofs_total:
-        dJdu_vec[int(bc_dof)] = 0
-
-    adjoint_solution = np.linalg.solve(dFdu_vec.transpose(), -dJdu_vec.transpose())
-    gradient = adjoint_solution.transpose() @ dFdnu_vec + dJdnu_vec
+    adjoint_solution = LinearProblem(
+        ufl.adjoint(dFdu),
+        -dJdu,
+        bcs=[bcs_adjoint],
+        petsc_options_prefix="adjoint_",
+        petsc_options={
+            "ksp_type": "preonly",
+            "pc_type": "lu",
+            "ksp_error_if_not_converged": True,
+        },
+    ).solve()
+    gradient = ufl.action(ufl.adjoint(dFdnu), adjoint_solution) + dJdnu
+    gradient = fem.assemble_scalar(fem.form(gradient))
 
     assert np.allclose(graph_.backprop(id(J), id(nu)), gradient)
 
@@ -109,8 +114,7 @@ def test_Stokes_dJdg(stokes_problem):
     F = stokes_problem["F"]
     J_form = stokes_problem["J_form"]
     J = stokes_problem["J"]
-    bcs = stokes_problem["bcs"]
-    bc_dofs_total = stokes_problem["bc_dofs_total"]
+    bcs_dofs = stokes_problem["bcs_dofs"]
     dofs_obstacle = stokes_problem["dofs_obstacle"]
     graph_ = stokes_problem["graph_"]
 
@@ -119,28 +123,36 @@ def test_Stokes_dJdg(stokes_problem):
 
     dJdg = ufl.derivative(J_form, g)
 
-    argument = ufl.TrialFunction(V)
     dFdu = ufl.derivative(F, up, argument)
+    dFdg = ufl.derivative(F, up, argument)
 
-    dJdu_vec = fem.assemble_vector(fem.form(dJdu)).array
-    dJdg_vec = fem.assemble_vector(fem.form(dJdg)).array
+    # Homogeneous conditions on all constrained velocity and pressure DOFs
+    zero = fem.Function(up.function_space)
+    bcs_adjoint = fem.dirichletbc(zero, bcs_dofs)
 
-    dFdg_vec = fem.assemble_matrix(
-        fem.form(ufl.derivative(F, up, ufl.TrialFunction(up.function_space)))
-    ).to_dense()
-    dFdu_vec = fem.assemble_matrix(fem.form(dFdu), bcs=bcs).to_dense()
+    adjoint_solution = LinearProblem(
+        ufl.adjoint(dFdu),
+        -dJdu,
+        bcs=[bcs_adjoint],
+        petsc_options_prefix="adjoint_",
+        petsc_options={
+            "ksp_type": "preonly",
+            "pc_type": "lu",
+            "ksp_error_if_not_converged": True,
+        },
+    ).solve()
+    gradient = ufl.action(ufl.adjoint(dFdg), adjoint_solution)
+    gradient = fem.assemble_vector(fem.form(gradient))
+    gradient.scatter_reverse(la.InsertMode.add)
+    gradient.scatter_forward()
 
-    # Apply the boundary conditions to the rhs of the adjoint problem
-    for bc_dof in bc_dofs_total:
-        dJdu_vec[int(bc_dof)] = 0
+    dJdg_vec = fem.assemble_vector(fem.form(dJdg))
+    dJdg_vec.scatter_reverse(la.InsertMode.add)
+    dJdg_vec.scatter_forward()
 
-    adjoint_solution = np.linalg.solve(dFdu_vec.transpose(), -dJdu_vec.transpose())
+    # Extract obstacle boundary values and map to the collapsed velocity space.
+    boundary_gradient = np.zeros_like(gradient.array)
+    boundary_gradient[dofs_obstacle[0]] = gradient.array[dofs_obstacle[0]]
+    gradient = boundary_gradient[V_u_map] + dJdg_vec.array
 
-    gradient = adjoint_solution.transpose() @ dFdg_vec
-
-    matrix = np.zeros((len(gradient), len(gradient)))
-    for index in dofs_obstacle[0]:
-        matrix[index, index] = 1.0
-
-    gradient = (matrix @ gradient)[V_u_map] + dJdg_vec
     assert np.allclose(gradient, graph_.backprop(id(J), id(g)))

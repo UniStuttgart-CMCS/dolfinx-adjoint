@@ -52,6 +52,8 @@ class Graph:
 
         """
         self.nodes.append(node)
+        if self._nx_graph is not None:
+            self._add_node_to_networkx(self._nx_graph, node)
 
     def add_edge(self, edge: Edge):
         """Add an edge to the graph
@@ -61,6 +63,8 @@ class Graph:
 
         """
         self.edges.append(edge)
+        if self._nx_graph is not None:
+            self._add_edge_to_networkx(self._nx_graph, edge)
 
     def get_node(self, id: int, version=None):
         """Get a node from the graph
@@ -161,6 +165,29 @@ class Graph:
         """
         return f"Graph object with {len(self.nodes)} nodes and {len(self.edges)} edges."
 
+    @staticmethod
+    def _edge_color(edge: Edge) -> str:
+        """Get the color of an edge, black if it is part of the marked path"""
+        return "black" if hasattr(edge, "marked") else "grey"
+
+    @classmethod
+    def _add_edge_to_networkx(cls, nx_graph: DiGraph, edge: Edge) -> None:
+        """Add an edge of the graph to its networkx representation"""
+        tag = "" if edge.__class__.__name__ == "Edge" else edge.__class__.__name__
+        nx_graph.add_edge(
+            id(edge.predecessor),
+            id(edge.successor),
+            tag=tag,
+            color=cls._edge_color(edge),
+            edge=edge,
+        )
+
+    @staticmethod
+    def _add_node_to_networkx(nx_graph: DiGraph, node: AbstractNode) -> None:
+        """Add a node of the graph to its networkx representation"""
+        color = "pink" if type(node) == AbstractNode else "lightblue"
+        nx_graph.add_node(id(node), name=node.name, node=node, color=color)
+
     def to_networkx(self) -> DiGraph:
         """Convert the graph to a networkx graph
 
@@ -170,38 +197,18 @@ class Graph:
         if self._nx_graph is not None:
             # Update dynamic edge colors based on marking
             for edge in self.edges:
-                u = id(edge.successor)
-                v = id(edge.predecessor)
+                u = id(edge.predecessor)
+                v = id(edge.successor)
                 if self._nx_graph.has_edge(u, v):
-                    self._nx_graph[u][v]["color"] = (
-                        "black" if hasattr(edge, "marked") else "grey"
-                    )
+                    self._nx_graph[u][v]["color"] = self._edge_color(edge)
             return self._nx_graph
 
         nx_graph = nx.DiGraph()
         for node in self.nodes:
-            nx_graph.add_node(id(node), name=node.name, node=node)
-            if type(node) == AbstractNode:
-                nx_graph.nodes[id(node)]["color"] = "pink"
-            else:
-                nx_graph.nodes[id(node)]["color"] = "lightblue"
-
+            self._add_node_to_networkx(nx_graph, node)
         for edge in self.edges:
-            if not edge.__class__.__name__ == "Edge":
-                tag = edge.__class__.__name__
-            else:
-                tag = ""
-            if hasattr(edge, "marked"):
-                color = "black"
-            else:
-                color = "grey"
-            nx_graph.add_edge(
-                id(edge.successor),
-                id(edge.predecessor),
-                tag=tag,
-                color=color,
-                edge=edge,
-            )
+            self._add_edge_to_networkx(nx_graph, edge)
+
         self._nx_graph = nx_graph
         return nx_graph
 
@@ -281,24 +288,62 @@ class Graph:
         """
         Perform backpropagation in the graph
 
+        The gradients of all previous calls are reset before the propagation is started.
+
+        If a variable is given, it acts as the control: only the edges on the path from the
+        control to the function are marked and executed. The propagation therefore stops at
+        the control, whose gradient is stored and returned, even if the control is an
+        intermediate node of the graph. No gradients are stored in the nodes between the
+        function and the control.
+
+        If no variable is given, all edges the function depends on are marked and the
+        propagation continues until it reaches the leaves of this dependency subgraph.
+        Gradients are then stored only in these leaves; intermediate nodes are passed
+        through without storing their gradients. The gradients can be retrieved afterwards
+        with :py:meth:`Node.get_grad` on the respective nodes.
+
         Args:
             function_id (int): The id of the function to be differentiated
-            variable_id (int, optional): The id of the variable with respect to which the differentiation is performed. Defaults to None.
-                If None, the differentiation is performed with respect to all variables in the graph.
+            variable_id (int, optional): The id of the variable (control) with respect to which
+                the differentiation is performed. Defaults to None. If None, the propagation is
+                carried out down to the dependency leaves of the function.
+
+        Returns:
+            float or PETSc.Vec: The gradient of the function with respect to the variable,
+            if a variable is given. Otherwise the gradients are only stored in the nodes.
+
+        Note:
+            The gradients are reset and the marks are refreshed on every call. The result is
+            stored in the given variable, or, without a variable, in the dependency leaves.
+            Every edge that can be executed has to be registered with :py:meth:`add_edge`,
+            since an edge that has never been marked is executed, and the graph must not be
+            modified during the propagation.
+
+        Note:
+            When the propagation includes collective operations, e.g. the adjoint equation of
+            a problem that is solved on the communicator of the mesh, the executed edges
+            depend on the marked path. All participating ranks therefore have to build the
+            same graph and to select the corresponding function and variable, so that the
+            operations are performed in a compatible order.
 
         """
+
         self.reset_grads()
         function_node = self.get_node(function_id)
         if variable_id is not None:
             variable_node = self.get_node(variable_id)
             self.get_path(id(variable_node), id(function_node))
         else:
-            for edge in self.edges:
-                edge.marked = True
-        grad_func = function_node.get_gradFuncs()[0]
-        grad_func(1.0)
+            self.get_dependencies(id(function_node))
+
+        # The function can be the result of more than one operation, so all of its
+        # gradient functions on the path are seeded with the derivative of one
+        for grad_func in function_node.get_gradFuncs():
+            if getattr(grad_func, "marked", True):
+                grad_func(1.0)
+
         if variable_id is not None:
-            return self.get_node(variable_id).get_grad()
+            return variable_node.get_grad()
 
     def get_path(self, start_id: int, end_id: int):
         """
@@ -307,22 +352,51 @@ class Graph:
         Args:
             start_id (int): The id of the start node
             end_id (int): The id of the end node
+
+        Raises:
+            ValueError: If the start or the end node is not part of the graph
+
         """
-        for edge in self.edges:
-            edge.marked = False
 
         nx_graph = self._get_networkx_graph()
+        if start_id not in nx_graph:
+            raise ValueError(
+                f"The start node with id {start_id} is not part of the graph."
+            )
+        if end_id not in nx_graph:
+            raise ValueError(f"The end node with id {end_id} is not part of the graph.")
 
-        descendants_of_start = nx.descendants(nx_graph, start_id)
-        descendants_of_start.add(start_id)
-        ancestors_of_end = nx.ancestors(nx_graph, end_id)
-        ancestors_of_end.add(end_id)
+        descendants_of_start = nx.descendants(nx_graph, start_id) | {start_id}
+        ancestors_of_end = nx.ancestors(nx_graph, end_id) | {end_id}
 
         for edge in self.edges:
-            succ_id = id(edge.successor)
-            pred_id = id(edge.predecessor)
-            if succ_id in descendants_of_start and pred_id in ancestors_of_end:
-                edge.marked = True
+            edge.marked = (
+                id(edge.predecessor) in descendants_of_start
+                and id(edge.successor) in ancestors_of_end
+            )
+
+    def get_dependencies(self, end_id: int):
+        """
+        Get all operations the end node is the result of by marking the edges
+
+        All other edges are unmarked in the same pass and a query that raises leaves the previous marking unchanged.
+
+        Args:
+            end_id (int): The id of the end node
+
+        Raises:
+            ValueError: If the end node is not part of the graph
+
+        """
+
+        nx_graph = self._get_networkx_graph()
+        if end_id not in nx_graph:
+            raise ValueError(f"The end node with id {end_id} is not part of the graph.")
+
+        upstream_of_end = nx.ancestors(nx_graph, end_id) | {end_id}
+
+        for edge in self.edges:
+            edge.marked = id(edge.successor) in upstream_of_end
 
     def reset_grads(self):
         """

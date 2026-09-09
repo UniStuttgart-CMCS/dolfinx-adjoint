@@ -288,10 +288,25 @@ class Graph:
         """
         Perform backpropagation in the graph
 
+        The gradients of all previous calls are reset before the propagation is started.
+
+        If a variable is given, it acts as the control: only the edges on the path from the
+        control to the function are marked and executed. The propagation therefore stops at
+        the control, whose gradient is stored and returned, even if the control is an
+        intermediate node of the graph. No gradients are stored in the nodes between the
+        function and the control.
+
+        If no variable is given, all edges the function depends on are marked and the
+        propagation continues until it reaches the leaves of this dependency subgraph.
+        Gradients are then stored only in these leaves; intermediate nodes are passed
+        through without storing their gradients. The gradients can be retrieved afterwards
+        with :py:meth:`Node.get_grad` on the respective nodes.
+
         Args:
             function_id (int): The id of the function to be differentiated
-            variable_id (int, optional): The id of the variable with respect to which the differentiation is performed. Defaults to None.
-                If None, the differentiation is performed with respect to all variables the function depends on.
+            variable_id (int, optional): The id of the variable (control) with respect to which
+                the differentiation is performed. Defaults to None. If None, the propagation is
+                carried out down to the dependency leaves of the function.
 
         Returns:
             float or PETSc.Vec: The gradient of the function with respect to the variable,
@@ -363,7 +378,7 @@ class Graph:
     def get_dependencies(self, end_id: int):
         """
         Get all operations the end node is the result of by marking the edges
-        
+
         All other edges are unmarked in the same pass and a query that raises leaves the previous marking unchanged.
 
         Args:

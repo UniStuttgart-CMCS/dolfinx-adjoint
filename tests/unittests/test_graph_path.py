@@ -29,6 +29,7 @@ def _build(edges: dict):
 
     return _graph, nodes, built_edges
 
+
 def _assert_marked(edges: dict, expected: set):
     """Assert that exactly the edges in ``expected`` are marked."""
     marked = {key for key, edge in edges.items() if getattr(edge, "marked", False)}

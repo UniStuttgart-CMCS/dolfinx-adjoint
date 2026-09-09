@@ -314,22 +314,28 @@ class Graph:
         Args:
             start_id (int): The id of the start node
             end_id (int): The id of the end node
+
+        Raises:
+            ValueError: If the start or the end node is not part of the graph
+
         """
-        for edge in self.edges:
-            edge.marked = False
 
         nx_graph = self._get_networkx_graph()
+        if start_id not in nx_graph:
+            raise ValueError(
+                f"The start node with id {start_id} is not part of the graph."
+            )
+        if end_id not in nx_graph:
+            raise ValueError(f"The end node with id {end_id} is not part of the graph.")
 
-        descendants_of_start = nx.descendants(nx_graph, start_id)
-        descendants_of_start.add(start_id)
-        ancestors_of_end = nx.ancestors(nx_graph, end_id)
-        ancestors_of_end.add(end_id)
+        descendants_of_start = nx.descendants(nx_graph, start_id) | {start_id}
+        ancestors_of_end = nx.ancestors(nx_graph, end_id) | {end_id}
 
         for edge in self.edges:
-            succ_id = id(edge.successor)
-            pred_id = id(edge.predecessor)
-            if succ_id in descendants_of_start and pred_id in ancestors_of_end:
-                edge.marked = True
+            edge.marked = (
+                id(edge.predecessor) in descendants_of_start
+                and id(edge.successor) in ancestors_of_end
+            )
 
     def reset_grads(self):
         """

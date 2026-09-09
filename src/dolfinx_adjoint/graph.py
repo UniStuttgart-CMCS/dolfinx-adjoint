@@ -161,6 +161,23 @@ class Graph:
         """
         return f"Graph object with {len(self.nodes)} nodes and {len(self.edges)} edges."
 
+    @staticmethod
+    def _edge_color(edge: Edge) -> str:
+        """Get the color of an edge, black if it is part of the marked path"""
+        return "black" if hasattr(edge, "marked") else "grey"
+
+    @classmethod
+    def _add_edge_to_networkx(cls, nx_graph: DiGraph, edge: Edge) -> None:
+        """Add an edge of the graph to its networkx representation"""
+        tag = "" if edge.__class__.__name__ == "Edge" else edge.__class__.__name__
+        nx_graph.add_edge(
+            id(edge.predecessor),
+            id(edge.successor),
+            tag=tag,
+            color=cls._edge_color(edge),
+            edge=edge,
+        )
+
     def to_networkx(self) -> DiGraph:
         """Convert the graph to a networkx graph
 
@@ -170,12 +187,10 @@ class Graph:
         if self._nx_graph is not None:
             # Update dynamic edge colors based on marking
             for edge in self.edges:
-                u = id(edge.successor)
-                v = id(edge.predecessor)
+                u = id(edge.predecessor)
+                v = id(edge.successor)
                 if self._nx_graph.has_edge(u, v):
-                    self._nx_graph[u][v]["color"] = (
-                        "black" if hasattr(edge, "marked") else "grey"
-                    )
+                    self._nx_graph[u][v]["color"] = self._edge_color(edge)
             return self._nx_graph
 
         nx_graph = nx.DiGraph()
@@ -187,21 +202,8 @@ class Graph:
                 nx_graph.nodes[id(node)]["color"] = "lightblue"
 
         for edge in self.edges:
-            if not edge.__class__.__name__ == "Edge":
-                tag = edge.__class__.__name__
-            else:
-                tag = ""
-            if hasattr(edge, "marked"):
-                color = "black"
-            else:
-                color = "grey"
-            nx_graph.add_edge(
-                id(edge.successor),
-                id(edge.predecessor),
-                tag=tag,
-                color=color,
-                edge=edge,
-            )
+            self._add_edge_to_networkx(nx_graph, edge)
+
         self._nx_graph = nx_graph
         return nx_graph
 

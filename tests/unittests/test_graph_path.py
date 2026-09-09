@@ -187,3 +187,23 @@ def test_get_path_with_an_unknown_node_keeps_the_previous_marks():
         _graph.get_path(id(unregistered), id(nodes["objective"]))
 
     _assert_marked(edges, {"e1", "e2"})
+
+
+def test_get_dependencies_marks_only_dependencies_and_clears_previous_marks():
+    """Dependency marking excludes downstream edges and clears unrelated marks."""
+    _graph, nodes, edges = _build(
+        {
+            "e1": ("variable", "form"),
+            "other": ("other_input", "form"),
+            "e_form": ("form", "objective"),
+            "post": ("objective", "post_processing"),
+            "unrelated": ("unrelated_input", "unrelated_output"),
+        }
+    )
+
+    _graph.get_path(id(nodes["unrelated_input"]), id(nodes["unrelated_output"]))
+    _assert_marked(edges, {"unrelated"})
+
+    _graph.get_dependencies(id(nodes["objective"]))
+
+    _assert_marked(edges, {"e1", "other", "e_form"})

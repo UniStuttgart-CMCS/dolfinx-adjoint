@@ -52,6 +52,8 @@ class Graph:
 
         """
         self.nodes.append(node)
+        if self._nx_graph is not None:
+            self._add_node_to_networkx(self._nx_graph, node)
 
     def add_edge(self, edge: Edge):
         """Add an edge to the graph
@@ -61,6 +63,8 @@ class Graph:
 
         """
         self.edges.append(edge)
+        if self._nx_graph is not None:
+            self._add_edge_to_networkx(self._nx_graph, edge)
 
     def get_node(self, id: int, version=None):
         """Get a node from the graph
@@ -178,6 +182,12 @@ class Graph:
             edge=edge,
         )
 
+    @staticmethod
+    def _add_node_to_networkx(nx_graph: DiGraph, node: AbstractNode) -> None:
+        """Add a node of the graph to its networkx representation"""
+        color = "pink" if type(node) == AbstractNode else "lightblue"
+        nx_graph.add_node(id(node), name=node.name, node=node, color=color)
+
     def to_networkx(self) -> DiGraph:
         """Convert the graph to a networkx graph
 
@@ -195,12 +205,7 @@ class Graph:
 
         nx_graph = nx.DiGraph()
         for node in self.nodes:
-            nx_graph.add_node(id(node), name=node.name, node=node)
-            if type(node) == AbstractNode:
-                nx_graph.nodes[id(node)]["color"] = "pink"
-            else:
-                nx_graph.nodes[id(node)]["color"] = "lightblue"
-
+            self._add_node_to_networkx(nx_graph, node)
         for edge in self.edges:
             self._add_edge_to_networkx(nx_graph, edge)
 

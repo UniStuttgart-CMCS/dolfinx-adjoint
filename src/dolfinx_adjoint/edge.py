@@ -72,7 +72,7 @@ class Edge:
         """
         return self.input_value
 
-    def __call__(self, value: float or PETSc.Vec):
+    def __call__(self, value: float | PETSc.Vec):
         """
         This method is used to perform the backpropagation of the edge.
 

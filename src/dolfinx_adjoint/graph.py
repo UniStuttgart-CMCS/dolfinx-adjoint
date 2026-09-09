@@ -291,21 +291,44 @@ class Graph:
         Args:
             function_id (int): The id of the function to be differentiated
             variable_id (int, optional): The id of the variable with respect to which the differentiation is performed. Defaults to None.
-                If None, the differentiation is performed with respect to all variables in the graph.
+                If None, the differentiation is performed with respect to all variables the function depends on.
+
+        Returns:
+            float or PETSc.Vec: The gradient of the function with respect to the variable,
+            if a variable is given. Otherwise the gradients are only stored in the nodes.
+
+        Note:
+            The gradients are reset and the marks are refreshed on every call. The result is
+            stored in the given variable, or, without a variable, in the dependency leaves.
+            Every edge that can be executed has to be registered with :py:meth:`add_edge`,
+            since an edge that has never been marked is executed, and the graph must not be
+            modified during the propagation.
+
+        Note:
+            When the propagation includes collective operations, e.g. the adjoint equation of
+            a problem that is solved on the communicator of the mesh, the executed edges
+            depend on the marked path. All participating ranks therefore have to build the
+            same graph and to select the corresponding function and variable, so that the
+            operations are performed in a compatible order.
 
         """
+
         self.reset_grads()
         function_node = self.get_node(function_id)
         if variable_id is not None:
             variable_node = self.get_node(variable_id)
             self.get_path(id(variable_node), id(function_node))
         else:
-            for edge in self.edges:
-                edge.marked = True
-        grad_func = function_node.get_gradFuncs()[0]
-        grad_func(1.0)
+            self.get_dependencies(id(function_node))
+
+        # The function can be the result of more than one operation, so all of its
+        # gradient functions on the path are seeded with the derivative of one
+        for grad_func in function_node.get_gradFuncs():
+            if getattr(grad_func, "marked", True):
+                grad_func(1.0)
+
         if variable_id is not None:
-            return self.get_node(variable_id).get_grad()
+            return variable_node.get_grad()
 
     def get_path(self, start_id: int, end_id: int):
         """
@@ -336,6 +359,29 @@ class Graph:
                 id(edge.predecessor) in descendants_of_start
                 and id(edge.successor) in ancestors_of_end
             )
+
+    def get_dependencies(self, end_id: int):
+        """
+        Get all operations the end node is the result of by marking the edges
+        
+        All other edges are unmarked in the same pass and a query that raises leaves the previous marking unchanged.
+
+        Args:
+            end_id (int): The id of the end node
+
+        Raises:
+            ValueError: If the end node is not part of the graph
+
+        """
+
+        nx_graph = self._get_networkx_graph()
+        if end_id not in nx_graph:
+            raise ValueError(f"The end node with id {end_id} is not part of the graph.")
+
+        upstream_of_end = nx.ancestors(nx_graph, end_id) | {end_id}
+
+        for edge in self.edges:
+            edge.marked = id(edge.successor) in upstream_of_end
 
     def reset_grads(self):
         """

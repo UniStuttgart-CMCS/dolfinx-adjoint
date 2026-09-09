@@ -93,12 +93,17 @@ class Edge:
         self.input_value = value
         grad_value = self.calculate_adjoint()
 
-        # Call next functions in the path
-        for function in self.next_functions:
+        # Extract all marked next functions
+        next_functions = [
+            function
+            for function in self.next_functions
+            if getattr(function, "marked", True)
+        ]
+        for function in next_functions:
             function(grad_value)
 
         # Accumulate gradient if end of path
-        if self.next_functions == [] and type(self.predecessor) == Node:
+        if not next_functions and isinstance(self.predecessor, Node):
             self.predecessor.accumulate_grad(grad_value)
 
     def __str__(self):

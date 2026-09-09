@@ -102,7 +102,14 @@ def test_Stokes_dJdg(stokes_problem):
 
     And the gradient computation:
 
-        dJ/dg = θ^T * ∂F/∂g + ∂J/∂g
+        dJ/dg = θ^T * ∂F/∂g + ∂J/∂up|_Γ + ∂J/∂g
+
+    The adjoint problem is solved with homogeneous conditions on all constrained dofs, so
+    θ vanishes there and θ^T * ∂F/∂g reduces to the lifting contribution. The lifted system
+    enforces u = g on the obstacle exactly, so a perturbation of g additionally moves the
+    solution values there one-to-one; that direct contribution is ∂J/∂up restricted to the
+    constrained dofs. The last term ∂J/∂g is the explicit dependence of J on g through the
+    boundary regularisation.
 
     We extract only the boundary values by multiplying with an identity matrix
     nonzero on the boundary.
@@ -150,9 +157,16 @@ def test_Stokes_dJdg(stokes_problem):
     dJdg_vec.scatter_reverse(la.InsertMode.add)
     dJdg_vec.scatter_forward()
 
+    # Direct contribution ∂J/∂up|_Γ: u = g holds exactly on the obstacle boundary.
+    dJdup_vec = fem.assemble_vector(fem.form(ufl.derivative(J_form, up)))
+    dJdup_vec.scatter_reverse(la.InsertMode.add)
+    dJdup_vec.scatter_forward()
+
     # Extract obstacle boundary values and map to the collapsed velocity space.
     boundary_gradient = np.zeros_like(gradient.array)
-    boundary_gradient[dofs_obstacle[0]] = gradient.array[dofs_obstacle[0]]
+    boundary_gradient[dofs_obstacle[0]] = (
+        gradient.array[dofs_obstacle[0]] + dJdup_vec.array[dofs_obstacle[0]]
+    )
     gradient = boundary_gradient[V_u_map] + dJdg_vec.array
 
     assert np.allclose(gradient, graph_.backprop(id(J), id(g)))

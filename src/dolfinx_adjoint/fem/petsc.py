@@ -505,7 +505,13 @@ class NonlinearProblem_Boundary_Edge(graph.Edge):
             (∂F/∂u)ᵀ λ = -xᵀ
 
         The accumulated gradient is defined by:
-            λᵀ * ∂F/∂g
+            λᵀ * ∂F/∂g + x
+
+        Here λᵀ * ∂F/∂g only covers the lifting of the linear form, since the adjoint solve
+        homogenises its right-hand side on the constrained dofs Γ. The term x accounts for the
+        constrained dofs themselves, where u_Γ = g holds exactly. The full vector x is added, as
+        the restriction to the controlled dofs is applied by
+        :py:class:`dolfinx_adjoint.fem.bcs.DirichletBC_Edge`.
 
         Returns:
             (PETSc.Vec): The accumulated gradient up to this point in the computational graph.
@@ -516,6 +522,10 @@ class NonlinearProblem_Boundary_Edge(graph.Edge):
         F, u_node, bcs, dFdbc_form = self.ctx
 
         u = u_node.get_object()
+
+        # The direct contribution x_Γ has to be secured before the adjoint solve, which
+        # homogenises the right-hand side it is derived from.
+        direct_contribution = self.input_value.copy()
 
         # Construct the Jacobian J = ∂F/∂u
         V = u.function_space
@@ -533,7 +543,13 @@ class NonlinearProblem_Boundary_Edge(graph.Edge):
         dFdbc = fem.petsc.assemble_matrix(dFdbc_form)
         dFdbc.assemble()
 
-        return dFdbc.transpose() * adjoint_solution.x.petsc_vec
+        # λᵀ * ∂F/∂g, the contribution of the lifting of the linear form
+        gradient = dFdbc.transpose() * adjoint_solution.x.petsc_vec
+
+        # x, the direct contribution of the constrained dofs, where u = g holds exactly
+        gradient.axpy(1.0, direct_contribution)
+
+        return gradient
 
 
 def AdjointProblemSolver(A: PETSc.Mat, b: PETSc.Vec, x: fem.Function, bcs=None):

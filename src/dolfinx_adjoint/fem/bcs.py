@@ -1,3 +1,4 @@
+import numpy as np
 import scipy.sparse as sps
 from dolfinx import fem
 from petsc4py import PETSc
@@ -40,7 +41,12 @@ def dirichletbc(*args, map=None, **kwargs):
         dirichletbc_node = graph.AbstractNode(output)
         _graph.add_node(dirichletbc_node)
 
-        dofs = args[1]
+        # The boundary condition provides its dofs unrolled, so that they address the
+        # entries of the gradient also in a blocked vector space, where the dofs given
+        # to the boundary condition address blocks of components. They are a single
+        # array also when the boundary condition couples a sub space with its
+        # collapsed space, in which case the indices are the ones of the sub space.
+        dofs = output.dof_indices()[0]
         ctx = [dofs, map]
 
         # Creating the edge between the DirichletBC and the function defining the value of the BC
@@ -73,11 +79,7 @@ class DirichletBC_Edge(graph.Edge):
         # Extract variables from contextvariable ctx
         dofs, map = self.ctx
 
-        import numpy as np
-
         size = np.shape(self.input_value)[0]
-        if np.shape(dofs)[0] == 2:
-            dofs = dofs[0]
         matrix = sps.csr_matrix((np.ones(np.size(dofs)), (dofs, dofs)), (size, size))
 
         # The map is used to define the map between the function space of the boundary

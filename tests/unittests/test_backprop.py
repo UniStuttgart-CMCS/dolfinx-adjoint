@@ -199,6 +199,45 @@ def test_backprop_clears_gradients_when_switching_controls():
     assert nodes["variable"].get_grad() is None
 
 
+def test_backprop_scales_the_derivative_with_the_seed():
+    """The seed is the adjoint value of the function and scales the derivative."""
+    _graph, objects, _, _ = _build(
+        [
+            ("e1", "variable", "mid", 2.0),
+            ("e2", "mid", "objective", 3.0),
+        ]
+    )
+
+    gradient = _graph.backprop(
+        id(objects["objective"]), id(objects["variable"]), seed=5.0
+    )
+
+    assert gradient == pytest.approx(5.0 * 2.0 * 3.0)
+
+
+def test_backprop_of_the_function_with_respect_to_itself():
+    """The derivative of the function with respect to itself is the seed."""
+    _graph, objects, nodes, edges = _build(
+        [
+            ("e1", "variable", "objective", 2.0),
+        ]
+    )
+
+    gradient = _graph.backprop(id(objects["objective"]), id(objects["objective"]))
+
+    assert gradient == pytest.approx(1.0)
+    assert nodes["objective"].get_grad() == pytest.approx(1.0)
+    # The operation the objective is the result of is not part of its self-derivative
+    assert _executed_edges(edges) == set()
+
+    # The self-derivative follows the seed instead of being a hardcoded one
+    gradient = _graph.backprop(
+        id(objects["objective"]), id(objects["objective"]), seed=5.0
+    )
+
+    assert gradient == pytest.approx(5.0)
+
+
 # Execution of marked edges
 
 

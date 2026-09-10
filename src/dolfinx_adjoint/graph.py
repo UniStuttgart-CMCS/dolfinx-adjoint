@@ -185,7 +185,7 @@ class Graph:
     @staticmethod
     def _add_node_to_networkx(nx_graph: DiGraph, node: AbstractNode) -> None:
         """Add a node of the graph to its networkx representation"""
-        color = "pink" if type(node) == AbstractNode else "lightblue"
+        color = "lightblue" if isinstance(node, Node) else "pink"
         nx_graph.add_node(id(node), name=node.name, node=node, color=color)
 
     def to_networkx(self) -> DiGraph:

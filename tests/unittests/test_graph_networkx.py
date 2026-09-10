@@ -2,7 +2,7 @@
 
 import dolfinx_adjoint.graph as graph
 from dolfinx_adjoint.edge import Edge
-from dolfinx_adjoint.node import AbstractNode
+from dolfinx_adjoint.node import AbstractNode, Node
 
 
 def _chain():
@@ -65,3 +65,27 @@ def test_to_networkx_contains_edges_added_after_the_first_call():
     _graph.add_edge(Edge(successor, added))
 
     assert _graph.to_networkx().has_edge(id(successor), id(added))
+
+
+def test_to_networkx_colours_operation_nodes_like_abstract_nodes():
+    """A node without a numerical value keeps its colour when it is a derived class."""
+
+    class OperationNode(AbstractNode):
+        """Minimal test subclass standing in for the operation nodes of the package."""
+
+    _graph = graph.Graph()
+
+    abstract = AbstractNode(object(), name="abstract")
+    operation = OperationNode(object(), name="operation")
+    value = Node(object(), name="value")
+    for node in (abstract, operation, value):
+        _graph.add_node(node)
+
+    nx_graph = _graph.to_networkx()
+
+    assert (
+        nx_graph.nodes[id(operation)]["color"] == nx_graph.nodes[id(abstract)]["color"]
+    )
+    # The colours have to stay distinguishable, so that colouring every node alike
+    # does not satisfy the assertion above.
+    assert nx_graph.nodes[id(value)]["color"] != nx_graph.nodes[id(abstract)]["color"]

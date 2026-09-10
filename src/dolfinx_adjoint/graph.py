@@ -284,7 +284,7 @@ class Graph:
             )
         plt.savefig(filename)
 
-    def backprop(self, function_id: int, variable_id=None):
+    def backprop(self, function_id: int, variable_id=None, seed=1.0):
         """
         Perform backpropagation in the graph
 
@@ -307,6 +307,9 @@ class Graph:
             variable_id (int, optional): The id of the variable (control) with respect to which
                 the differentiation is performed. Defaults to None. If None, the propagation is
                 carried out down to the dependency leaves of the function.
+            seed (float or PETSc.Vec, optional): The adjoint value the propagation is
+                started with. Defaults to 1.0, the derivative of a scalar function
+                with respect to itself.
 
         Returns:
             float or PETSc.Vec: The gradient of the function with respect to the variable,
@@ -336,11 +339,13 @@ class Graph:
         else:
             self.get_dependencies(id(function_node))
 
-        # The function can be the result of more than one operation, so all of its
-        # gradient functions on the path are seeded with the derivative of one
-        for grad_func in function_node.get_gradFuncs():
-            if getattr(grad_func, "marked", True):
-                grad_func(1.0)
+        # The seed enters the propagation through an edge that ends in the function and
+        # is deliberately not part of the graph, so that it is always executed. It seeds
+        # all the gradient functions of the function on the path, since the function can
+        # be the result of more than one operation.
+        seed_edge = Edge(function_node, None)
+        seed_edge.set_next_functions(function_node.get_gradFuncs())
+        seed_edge(seed)
 
         if variable_id is not None:
             return variable_node.get_grad()

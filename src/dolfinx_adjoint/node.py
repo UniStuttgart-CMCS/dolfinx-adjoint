@@ -155,9 +155,6 @@ class Node(AbstractNode):
             return self.object
         return ctypes.cast(self.id, ctypes.py_object).value
 
-    def set_grad(self, value: float or PETSc.Vec):
-        self.grad = value
-
     def get_grad(self):
         return self.grad
 
@@ -165,8 +162,19 @@ class Node(AbstractNode):
         self.grad = None
 
     def accumulate_grad(self, value: float or PETSc.Vec):
+        """
+        Accumulate a gradient contribution in the node.
+
+        Note:
+            Contributions relying on shared data types (e.g. PETSc.Vec) should be accumulated without modifying the contribution. This is ensured for PETSc.Vec by using the copy method. Contributions relying on non-shared data types (e.g. float) can be accumulated directly.
+
+        Args:
+            value (float or PETSc.Vec): The gradient contribution to accumulate
+
+        """
+
         if self.grad is None:
-            self.grad = value
+            self.grad = value.copy() if isinstance(value, PETSc.Vec) else value
         else:
             self.grad += value
 

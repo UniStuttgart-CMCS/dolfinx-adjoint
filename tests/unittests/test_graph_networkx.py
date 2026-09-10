@@ -1,5 +1,7 @@
 """Unit tests for the networkx representation of the computational graph."""
 
+import pytest
+
 import dolfinx_adjoint.graph as graph
 from dolfinx_adjoint.edge import Edge
 from dolfinx_adjoint.node import AbstractNode, Node
@@ -18,6 +20,24 @@ def _chain():
     _graph.add_edge(edge)
 
     return _graph, predecessor, successor, edge
+
+
+@pytest.mark.parametrize("representation_built", [False, True])
+def test_add_edge_rejects_parallel_edges(representation_built):
+    """Reject equal endpoints without changing the graph or its representation."""
+    _graph, predecessor, successor, edge = _chain()
+    parallel_edge = Edge(predecessor, successor)
+
+    if representation_built:
+        _graph.to_networkx()
+
+    with pytest.raises(ValueError):
+        _graph.add_edge(parallel_edge)
+
+    assert _graph.edges == [edge]
+    assert list(_graph.to_networkx().edges(data="edge")) == [
+        (id(predecessor), id(successor), edge)
+    ]
 
 
 def test_to_networkx_preserves_the_data_flow():

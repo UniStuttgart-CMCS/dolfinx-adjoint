@@ -144,20 +144,6 @@ def test_backprop_seeds_all_gradient_functions_of_the_function():
     assert gradient == pytest.approx(2.0 * 3.0 + 5.0 * 7.0)
 
 
-def test_backprop_sums_parallel_edges_between_the_same_nodes():
-    """Two operations connecting the same pair of nodes both contribute."""
-    _graph, objects, _, _ = _build(
-        [
-            ("e_first", "variable", "objective", 2.0),
-            ("e_second", "variable", "objective", 3.0),
-        ]
-    )
-
-    gradient = _graph.backprop(id(objects["objective"]), id(objects["variable"]))
-
-    assert gradient == pytest.approx(5.0)
-
-
 def test_backprop_without_a_variable_stores_gradients_only_in_dependency_leaves():
     """Unrestricted propagation stores gradients in the objective's dependency leaves."""
     _graph, objects, nodes, _ = _build(

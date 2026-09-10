@@ -168,7 +168,7 @@ class Graph:
     @staticmethod
     def _edge_color(edge: Edge) -> str:
         """Get the color of an edge, black if it is part of the marked path"""
-        return "black" if hasattr(edge, "marked") else "grey"
+        return "black" if getattr(edge, "marked", False) else "grey"
 
     @classmethod
     def _add_edge_to_networkx(cls, nx_graph: DiGraph, edge: Edge) -> None:
@@ -235,7 +235,7 @@ class Graph:
 
         """
         plt.figure(figsize=(10, 8))
-        nx_graph = self._get_networkx_graph()
+        nx_graph = self.to_networkx()
         labels = nx.get_node_attributes(nx_graph, "name")
         edge_labels = nx.get_edge_attributes(nx_graph, "tag")
         edge_colors = nx.get_edge_attributes(nx_graph, "color")

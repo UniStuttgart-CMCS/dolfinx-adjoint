@@ -61,7 +61,14 @@ class Graph:
         Args:
             edge (Edge): The edge to be added to the graph
 
+        Raises:
+            ValueError: If an edge already connects the predecessor to the successor
+
         """
+        if self.get_edge(edge.predecessor, edge.successor) is not None:
+            raise ValueError(
+                f"An edge from {edge.predecessor} to {edge.successor} is already part of the graph."
+            )
         self.edges.append(edge)
         if self._nx_graph is not None:
             self._add_edge_to_networkx(self._nx_graph, edge)

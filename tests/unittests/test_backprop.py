@@ -6,6 +6,7 @@ import dolfinx_adjoint.graph as graph
 from dolfinx_adjoint.edge import Edge
 from dolfinx_adjoint.node import AbstractNode, Node
 
+
 class LinearEdge(Edge):
     """Test double with a constant derivative and a flag indicating execution."""
 

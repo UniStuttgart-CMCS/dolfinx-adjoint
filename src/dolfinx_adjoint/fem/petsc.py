@@ -552,6 +552,36 @@ class NonlinearProblem_Boundary_Edge(graph.Edge):
         return gradient
 
 
+def _create_adjoint_solver(A: PETSc.Mat) -> PETSc.KSP:
+    """
+    Create the linear solver used for the adjoint equations.
+
+    Args:
+        A (PETSc.Mat): The matrix of the adjoint equation.
+
+    Returns:
+        (PETSc.KSP): The solver for the adjoint equation.
+
+    """
+    _solver = PETSc.KSP().create(A.comm)
+    _solver.setOperators(A)
+
+    _solver.setType("preonly")
+    _solver.getPC().setType("lu")
+    _solver.getPC().setFactorSolverType("mumps")
+    opts = PETSc.Options()
+    opts["mat_mumps_icntl_24"] = (
+        1  # Option to support solving a singular matrix (pressure nullspace)
+    )
+    opts["mat_mumps_icntl_25"] = (
+        0  # Option to support solving a singular matrix (pressure nullspace)
+    )
+    opts["ksp_error_if_not_converged"] = 1
+    _solver.setFromOptions()
+
+    return _solver
+
+
 def AdjointProblemSolver(A: PETSc.Mat, b: PETSc.Vec, x: fem.Function, bcs=None):
     """
     Linear solver using PETSc as a linear algebra backend for the adjoint equations.
@@ -568,25 +598,12 @@ def AdjointProblemSolver(A: PETSc.Mat, b: PETSc.Vec, x: fem.Function, bcs=None):
     """
 
     _x = create_vector(x.function_space)
-    _solver = PETSc.KSP().create(x.function_space.mesh.comm)
-    _solver.setOperators(A)
+    _solver = _create_adjoint_solver(A)
 
     _b = PETSc.Vec().createWithArray(b)
     if bcs is not None:
         set_bc(_b, bcs, alpha=0.0)
 
-    _solver.setType("preonly")
-    _solver.getPC().setType("lu")
-    _solver.getPC().setFactorSolverType("mumps")
-    opts = PETSc.Options()
-    opts["mat_mumps_icntl_24"] = (
-        1  # Option to support solving a singular matrix (pressure nullspace)
-    )
-    opts["mat_mumps_icntl_25"] = (
-        0  # Option to support solving a singular matrix (pressure nullspace)
-    )
-    opts["ksp_error_if_not_converged"] = 1
-    _solver.setFromOptions()
     _solver.solve(_b, _x)
 
     assign(_x, x)

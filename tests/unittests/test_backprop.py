@@ -4,7 +4,7 @@ import pytest
 
 import dolfinx_adjoint.graph as graph
 from dolfinx_adjoint.edge import Edge
-from dolfinx_adjoint.node import Node
+from dolfinx_adjoint.node import AbstractNode, Node
 
 
 class LinearEdge(Edge):
@@ -145,20 +145,6 @@ def test_backprop_seeds_all_gradient_functions_of_the_function():
     assert gradient == pytest.approx(2.0 * 3.0 + 5.0 * 7.0)
 
 
-def test_backprop_sums_parallel_edges_between_the_same_nodes():
-    """Two operations connecting the same pair of nodes both contribute."""
-    _graph, objects, _, _ = _build(
-        [
-            ("e_first", "variable", "objective", 2.0),
-            ("e_second", "variable", "objective", 3.0),
-        ]
-    )
-
-    gradient = _graph.backprop(id(objects["objective"]), id(objects["variable"]))
-
-    assert gradient == pytest.approx(5.0)
-
-
 def test_backprop_without_a_variable_stores_gradients_only_in_dependency_leaves():
     """Unrestricted propagation stores gradients in the objective's dependency leaves."""
     _graph, objects, nodes, _ = _build(
@@ -197,6 +183,45 @@ def test_backprop_clears_gradients_when_switching_controls():
     gradient = _graph.backprop(id(objects["objective"]), id(objects["other_input"]))
     assert gradient == pytest.approx(3.0)
     assert nodes["variable"].get_grad() is None
+
+
+def test_backprop_scales_the_derivative_with_the_seed():
+    """The seed is the adjoint value of the function and scales the derivative."""
+    _graph, objects, _, _ = _build(
+        [
+            ("e1", "variable", "mid", 2.0),
+            ("e2", "mid", "objective", 3.0),
+        ]
+    )
+
+    gradient = _graph.backprop(
+        id(objects["objective"]), id(objects["variable"]), seed=5.0
+    )
+
+    assert gradient == pytest.approx(5.0 * 2.0 * 3.0)
+
+
+def test_backprop_of_the_function_with_respect_to_itself():
+    """The derivative of the function with respect to itself is the seed."""
+    _graph, objects, nodes, edges = _build(
+        [
+            ("e1", "variable", "objective", 2.0),
+        ]
+    )
+
+    gradient = _graph.backprop(id(objects["objective"]), id(objects["objective"]))
+
+    assert gradient == pytest.approx(1.0)
+    assert nodes["objective"].get_grad() == pytest.approx(1.0)
+    # The operation the objective is the result of is not part of its self-derivative
+    assert _executed_edges(edges) == set()
+
+    # The self-derivative follows the seed instead of being a hardcoded one
+    gradient = _graph.backprop(
+        id(objects["objective"]), id(objects["objective"]), seed=5.0
+    )
+
+    assert gradient == pytest.approx(5.0)
 
 
 # Execution of marked edges
@@ -257,3 +282,79 @@ def test_backprop_updates_execution_when_switching_controls_and_modes():
         _graph.backprop(id(objects["objective"]), variable_id)
 
         assert _executed_edges(edges) == expected, f"control={control!r}"
+
+
+# Validation of the arguments
+def test_backprop_rejects_an_unknown_function():
+    """An unregistered function is reported with the id that has been passed."""
+    _graph, objects, _, _ = _build(
+        [
+            ("e1", "variable", "objective", 2.0),
+        ]
+    )
+
+    # The node lookup of an unknown id yields None, whose id is reported instead
+    unregistered = object()
+    with pytest.raises(ValueError, match=str(id(unregistered))):
+        _graph.backprop(id(unregistered), id(objects["variable"]))
+
+
+def test_backprop_rejects_an_unknown_variable():
+    """An unregistered variable is reported with the id that has been passed."""
+    _graph, objects, _, _ = _build(
+        [
+            ("e1", "variable", "objective", 2.0),
+        ]
+    )
+
+    unregistered = object()
+    with pytest.raises(ValueError, match=str(id(unregistered))):
+        _graph.backprop(id(objects["objective"]), id(unregistered))
+
+
+def test_backprop_with_an_unknown_argument_keeps_the_previous_gradients():
+    """A call that is rejected does not discard the gradients of the previous call."""
+    _graph, objects, nodes, _ = _build(
+        [
+            ("e1", "variable", "objective", 2.0),
+        ]
+    )
+
+    _graph.backprop(id(objects["objective"]), id(objects["variable"]))
+    assert nodes["variable"].get_grad() == pytest.approx(2.0)
+
+    unregistered = object()
+    with pytest.raises(ValueError):
+        _graph.backprop(id(objects["objective"]), id(unregistered))
+
+    assert nodes["variable"].get_grad() == pytest.approx(2.0)
+
+
+def test_backprop_rejects_a_variable_that_cannot_store_a_gradient():
+    """A variable without a numerical value is rejected before the propagation."""
+    _graph, objects, _, edges = _build(
+        [
+            ("e1", "variable", "objective", 2.0),
+        ],
+        node_types={"variable": AbstractNode},
+    )
+
+    with pytest.raises(TypeError):
+        _graph.backprop(id(objects["objective"]), id(objects["variable"]))
+
+    assert _executed_edges(edges) == set()
+
+
+def test_backprop_rejects_a_variable_the_function_does_not_depend_on():
+    """A variable the function does not depend on is rejected instead of yielding None."""
+    _graph, objects, nodes, _ = _build(
+        [
+            ("e1", "variable", "mid", 2.0),
+            ("e2", "mid", "objective", 3.0),
+        ]
+    )
+
+    with pytest.raises(ValueError):
+        _graph.backprop(id(objects["mid"]), id(objects["objective"]))
+
+    assert nodes["mid"].get_grad() is None

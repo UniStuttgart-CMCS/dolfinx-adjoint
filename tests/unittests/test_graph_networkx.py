@@ -1,8 +1,10 @@
 """Unit tests for the networkx representation of the computational graph."""
 
+import pytest
+
 import dolfinx_adjoint.graph as graph
 from dolfinx_adjoint.edge import Edge
-from dolfinx_adjoint.node import AbstractNode
+from dolfinx_adjoint.node import AbstractNode, Node
 
 
 def _chain():
@@ -18,6 +20,24 @@ def _chain():
     _graph.add_edge(edge)
 
     return _graph, predecessor, successor, edge
+
+
+@pytest.mark.parametrize("representation_built", [False, True])
+def test_add_edge_rejects_parallel_edges(representation_built):
+    """Reject equal endpoints without changing the graph or its representation."""
+    _graph, predecessor, successor, edge = _chain()
+    parallel_edge = Edge(predecessor, successor)
+
+    if representation_built:
+        _graph.to_networkx()
+
+    with pytest.raises(ValueError):
+        _graph.add_edge(parallel_edge)
+
+    assert _graph.edges == [edge]
+    assert list(_graph.to_networkx().edges(data="edge")) == [
+        (id(predecessor), id(successor), edge)
+    ]
 
 
 def test_to_networkx_preserves_the_data_flow():
@@ -65,3 +85,27 @@ def test_to_networkx_contains_edges_added_after_the_first_call():
     _graph.add_edge(Edge(successor, added))
 
     assert _graph.to_networkx().has_edge(id(successor), id(added))
+
+
+def test_to_networkx_colours_operation_nodes_like_abstract_nodes():
+    """A node without a numerical value keeps its colour when it is a derived class."""
+
+    class OperationNode(AbstractNode):
+        """Minimal test subclass standing in for the operation nodes of the package."""
+
+    _graph = graph.Graph()
+
+    abstract = AbstractNode(object(), name="abstract")
+    operation = OperationNode(object(), name="operation")
+    value = Node(object(), name="value")
+    for node in (abstract, operation, value):
+        _graph.add_node(node)
+
+    nx_graph = _graph.to_networkx()
+
+    assert (
+        nx_graph.nodes[id(operation)]["color"] == nx_graph.nodes[id(abstract)]["color"]
+    )
+    # The colours have to stay distinguishable, so that colouring every node alike
+    # does not satisfy the assertion above.
+    assert nx_graph.nodes[id(value)]["color"] != nx_graph.nodes[id(abstract)]["color"]

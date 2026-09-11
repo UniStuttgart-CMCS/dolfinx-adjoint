@@ -41,14 +41,27 @@ class LinearProblem(LinearProblemBase):
             graph: An additional keyword argument to specifier whether the assemble
                 operation should be added to the graph. If not present, the original functionality
                 of dolfinx is used without any additional functionalities.
+            adjoint_petsc_options: An additional keyword argument with the PETSc options
+                configuring the solver of the adjoint equations of the problem.
+            adjoint_petsc_options_prefix: An additional keyword argument with the
+                options prefix of that solver. Defaults to the options prefix of the
+                problem followed by ``adjoint_``.
 
         """
+        adjoint_petsc_options = kwargs.pop("adjoint_petsc_options", None)
+        adjoint_petsc_options_prefix = kwargs.pop("adjoint_petsc_options_prefix", None)
+
         if not "graph" in kwargs:
             super().__init__(*args, **kwargs)
         else:
             _graph = kwargs["graph"]
             del kwargs["graph"]
             super().__init__(*args, **kwargs)
+
+            if adjoint_petsc_options_prefix is None:
+                adjoint_petsc_options_prefix = (
+                    kwargs["petsc_options_prefix"] + "adjoint_"
+                )
 
             a = args[0]
             L = args[1]
@@ -60,7 +73,14 @@ class LinearProblem(LinearProblemBase):
                     "The solution function u needs to be provided as a keyword argument for the LinearProblem when using the graph functionalities."
                 )
 
-            problem_node = LinearProblemNode(self, a, L, **kwargs)
+            problem_node = LinearProblemNode(
+                self,
+                a,
+                L,
+                adjoint_petsc_options=adjoint_petsc_options,
+                adjoint_petsc_options_prefix=adjoint_petsc_options_prefix,
+                **kwargs,
+            )
             _graph.add_node(problem_node)
 
             u_node = _graph.get_node(id(u))
@@ -175,8 +195,16 @@ class NonlinearProblem(NonlinearProblemBase):
             graph: An additional keyword argument to specifier whether the assemble
                 operation should be added to the graph. If not present, the original functionality
                 of dolfinx is used without any additional functionalities.
+            adjoint_petsc_options: An additional keyword argument with the PETSc options
+                configuring the solver of the adjoint equations of the problem.
+            adjoint_petsc_options_prefix: An additional keyword argument with the
+                options prefix of that solver. Defaults to the options prefix of the
+                problem followed by ``adjoint_``.
 
         """
+        adjoint_petsc_options = kwargs.pop("adjoint_petsc_options", None)
+        adjoint_petsc_options_prefix = kwargs.pop("adjoint_petsc_options_prefix", None)
+
         if not "graph" in kwargs:
             super().__init__(*args, **kwargs)
         else:
@@ -184,10 +212,22 @@ class NonlinearProblem(NonlinearProblemBase):
             del kwargs["graph"]
             super().__init__(*args, **kwargs)
 
+            if adjoint_petsc_options_prefix is None:
+                adjoint_petsc_options_prefix = (
+                    kwargs["petsc_options_prefix"] + "adjoint_"
+                )
+
             F_form = args[0]
             u = args[1]
 
-            problem_node = NonlinearProblemNode(self, F_form, u, **kwargs)
+            problem_node = NonlinearProblemNode(
+                self,
+                F_form,
+                u,
+                adjoint_petsc_options=adjoint_petsc_options,
+                adjoint_petsc_options_prefix=adjoint_petsc_options_prefix,
+                **kwargs,
+            )
             _graph.add_node(problem_node)
 
             u_node = _graph.get_node(id(u))
@@ -288,6 +328,8 @@ class LinearProblemNode(graph.AbstractNode):
         object: Any,
         a: ufl.form.Form,
         L: ufl.form.Form,
+        adjoint_petsc_options: dict = None,
+        adjoint_petsc_options_prefix: str = None,
         **kwargs,
     ):
         """
@@ -301,6 +343,10 @@ class LinearProblemNode(graph.AbstractNode):
             a (ufl.form.Form): The bilinear form of the linear problem.
             L (ufl.form.Form): The linear form of the linear problem.
             u (fem.Function): The solution of the linear problem.
+            adjoint_petsc_options (dict, optional): The PETSc options configuring the
+                solver of the adjoint equations of the problem.
+            adjoint_petsc_options_prefix (str, optional): The options prefix of that
+                solver.
             kwargs: Additional keyword arguments to be passed to the super class.
 
         """
@@ -308,6 +354,8 @@ class LinearProblemNode(graph.AbstractNode):
         self.a = a
         self.L = L
         self.kwargs = kwargs
+        self.adjoint_petsc_options = adjoint_petsc_options
+        self.adjoint_petsc_options_prefix = adjoint_petsc_options_prefix
 
     def __call__(self):
         """
@@ -324,7 +372,15 @@ class NonlinearProblemNode(graph.AbstractNode):
     Node for the initialization of :py:class:`dolfinx.fem.petsc.NonlinearProblem`.
     """
 
-    def __init__(self, object: Any, F: ufl.form.Form, u: fem.Function, **kwargs):
+    def __init__(
+        self,
+        object: Any,
+        F: ufl.form.Form,
+        u: fem.Function,
+        adjoint_petsc_options: dict = None,
+        adjoint_petsc_options_prefix: str = None,
+        **kwargs,
+    ):
         """
         Constructor for the NonlinearProblemNode.
 
@@ -335,6 +391,10 @@ class NonlinearProblemNode(graph.AbstractNode):
             object (Any): The NonlinearProblem object.
             F (ufl.form.Form): The form of the nonlinear problem.
             u (fem.Function): The solution of the nonlinear problem.
+            adjoint_petsc_options (dict, optional): The PETSc options configuring the
+                solver of the adjoint equations of the problem.
+            adjoint_petsc_options_prefix (str, optional): The options prefix of that
+                solver.
             kwargs: Additional keyword arguments to be passed to the super class.
 
         """
@@ -342,6 +402,8 @@ class NonlinearProblemNode(graph.AbstractNode):
         self.F = F
         self.u = u
         self.kwargs = kwargs
+        self.adjoint_petsc_options = adjoint_petsc_options
+        self.adjoint_petsc_options_prefix = adjoint_petsc_options_prefix
 
     def __call__(self):
         """
@@ -429,7 +491,12 @@ class NonlinearProblem_Coefficient_Edge(graph.Edge):
 
         # Solve (J⁻¹)ᵀ λ = -x where x is the input with a sparse linear solver
         adjoint_solution = AdjointProblemSolver(
-            J.transpose(), -self.input_value, fem.Function(V), bcs=bcs
+            J.transpose(),
+            -self.input_value,
+            fem.Function(V),
+            bcs=bcs,
+            petsc_options=self.successor.adjoint_petsc_options,
+            petsc_options_prefix=self.successor.adjoint_petsc_options_prefix,
         )
 
         # Calculate ∂F/∂m
@@ -480,7 +547,12 @@ class NonlinearProblem_Constant_Edge(graph.Edge):
 
         # Solve (J⁻¹)ᵀ λ = -x where x is the input with a sparse linear solver
         adjoint_solution = AdjointProblemSolver(
-            J.transpose(), -self.input_value, fem.Function(V), bcs=bcs
+            J.transpose(),
+            -self.input_value,
+            fem.Function(V),
+            bcs=bcs,
+            petsc_options=self.successor.adjoint_petsc_options,
+            petsc_options_prefix=self.successor.adjoint_petsc_options_prefix,
         )
 
         # Create a function based on the constant in order to use ufl.derivative
@@ -548,7 +620,12 @@ class NonlinearProblem_Boundary_Edge(graph.Edge):
 
         # Solve (J⁻¹)ᵀ λ = -x where x is the input with a sparse linear solver
         adjoint_solution = AdjointProblemSolver(
-            J.transpose(), -self.input_value, fem.Function(V), bcs=bcs
+            J.transpose(),
+            -self.input_value,
+            fem.Function(V),
+            bcs=bcs,
+            petsc_options=self.successor.adjoint_petsc_options,
+            petsc_options_prefix=self.successor.adjoint_petsc_options_prefix,
         )
 
         # ∂F/∂m = dFdbc defined in the nonlinear problem as a fem.Form
@@ -604,7 +681,14 @@ def _create_adjoint_solver(
             del _options[petsc_options_prefix + key]
 
 
-def AdjointProblemSolver(A: PETSc.Mat, b: PETSc.Vec, x: fem.Function, bcs=None):
+def AdjointProblemSolver(
+    A: PETSc.Mat,
+    b: PETSc.Vec,
+    x: fem.Function,
+    bcs=None,
+    petsc_options: dict = None,
+    petsc_options_prefix: str = None,
+):
     """
     Linear solver using PETSc as a linear algebra backend for the adjoint equations.
 
@@ -613,6 +697,8 @@ def AdjointProblemSolver(A: PETSc.Mat, b: PETSc.Vec, x: fem.Function, bcs=None):
         b (PETSc.Vec): The right-hand side of the adjoint equation.
         x (fem.Function): The solution of the adjoint equation.
         bcs (list): The boundary conditions of the adjoint equation.
+        petsc_options (dict, optional): The PETSc options configuring the solver.
+        petsc_options_prefix (str, optional): The options prefix of the solver.
 
     Returns:
         (fem.Function): The solution of the adjoint equation.
@@ -625,7 +711,9 @@ def AdjointProblemSolver(A: PETSc.Mat, b: PETSc.Vec, x: fem.Function, bcs=None):
     if bcs is not None:
         set_bc(_b, bcs, alpha=0.0)
 
-    with _create_adjoint_solver(A) as _solver:
+    with _create_adjoint_solver(
+        A, petsc_options=petsc_options, petsc_options_prefix=petsc_options_prefix
+    ) as _solver:
         _solver.solve(_b, _x)
 
     assign(_x, x)

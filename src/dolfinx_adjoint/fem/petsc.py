@@ -1,3 +1,4 @@
+from collections.abc import Generator
 from contextlib import contextmanager
 from typing import Any
 
@@ -317,8 +318,8 @@ class LinearProblemNode(graph.AbstractNode):
         object: Any,
         a: ufl.form.Form,
         L: ufl.form.Form,
-        adjoint_petsc_options: dict = None,
-        adjoint_petsc_options_prefix: str = None,
+        adjoint_petsc_options: dict | None = None,
+        adjoint_petsc_options_prefix: str | None = None,
         **kwargs,
     ):
         """
@@ -366,8 +367,8 @@ class NonlinearProblemNode(graph.AbstractNode):
         object: Any,
         F: ufl.form.Form,
         u: fem.Function,
-        adjoint_petsc_options: dict = None,
-        adjoint_petsc_options_prefix: str = None,
+        adjoint_petsc_options: dict | None = None,
+        adjoint_petsc_options_prefix: str | None = None,
         **kwargs,
     ):
         """
@@ -632,8 +633,10 @@ class NonlinearProblem_Boundary_Edge(graph.Edge):
 
 @contextmanager
 def _create_adjoint_solver(
-    A: PETSc.Mat, petsc_options: dict = None, petsc_options_prefix: str = None
-) -> PETSc.KSP:
+    A: PETSc.Mat,
+    petsc_options: dict | None = None,
+    petsc_options_prefix: str | None = None,
+) -> Generator[PETSc.KSP, None, None]:
     """
     Create the linear solver used for the adjoint equations.
 
@@ -675,8 +678,8 @@ def AdjointProblemSolver(
     b: PETSc.Vec,
     x: fem.Function,
     bcs=None,
-    petsc_options: dict = None,
-    petsc_options_prefix: str = None,
+    petsc_options: dict | None = None,
+    petsc_options_prefix: str | None = None,
 ):
     """
     Linear solver using PETSc as a linear algebra backend for the adjoint equations.

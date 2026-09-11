@@ -1,3 +1,4 @@
+from contextlib import contextmanager
 from typing import Any
 
 import ufl
@@ -563,6 +564,7 @@ class NonlinearProblem_Boundary_Edge(graph.Edge):
         return gradient
 
 
+@contextmanager
 def _create_adjoint_solver(
     A: PETSc.Mat, petsc_options: dict = None, petsc_options_prefix: str = None
 ) -> PETSc.KSP:
@@ -575,13 +577,8 @@ def _create_adjoint_solver(
             replace `DEFAULT_ADJOINT_PETSC_OPTIONS` rather than adding to them.
         petsc_options_prefix (str, optional): The options prefix of the solver.
 
-    Returns:
+    Yields:
         (PETSc.KSP): The solver for the adjoint equation.
-
-    Note:
-        The options remain in the PETSc options database once the solver is created,
-        since the options of the factorisation, such as ``mat_mumps_icntl_24``, are only
-        read when the preconditioner is set up during the solve.
 
     """
     if petsc_options is None:
@@ -596,11 +593,15 @@ def _create_adjoint_solver(
     # The prefix is prepended to every key explicitly, since PETSc applies the prefix
     # stack of prefixPush when it sets an option but not when it deletes one.
     _options = PETSc.Options()
-    for key, value in petsc_options.items():
-        _options[petsc_options_prefix + key] = value
-    _solver.setFromOptions()
+    try:
+        for key, value in petsc_options.items():
+            _options[petsc_options_prefix + key] = value
+        _solver.setFromOptions()
 
-    return _solver
+        yield _solver
+    finally:
+        for key in petsc_options:
+            del _options[petsc_options_prefix + key]
 
 
 def AdjointProblemSolver(A: PETSc.Mat, b: PETSc.Vec, x: fem.Function, bcs=None):
@@ -619,13 +620,13 @@ def AdjointProblemSolver(A: PETSc.Mat, b: PETSc.Vec, x: fem.Function, bcs=None):
     """
 
     _x = create_vector(x.function_space)
-    _solver = _create_adjoint_solver(A)
 
     _b = PETSc.Vec().createWithArray(b)
     if bcs is not None:
         set_bc(_b, bcs, alpha=0.0)
 
-    _solver.solve(_b, _x)
+    with _create_adjoint_solver(A) as _solver:
+        _solver.solve(_b, _x)
 
     assign(_x, x)
 

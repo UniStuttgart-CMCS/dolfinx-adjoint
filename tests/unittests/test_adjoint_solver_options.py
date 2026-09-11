@@ -14,14 +14,13 @@ def test_adjoint_solver_is_configured_by_the_given_options():
     A.setUp()
     A.assemble()
 
-    solver = _create_adjoint_solver(
+    with _create_adjoint_solver(
         A,
         petsc_options={"ksp_type": "cg", "pc_type": "lu"},
         petsc_options_prefix="test_adjoint_solver_options_",
-    )
-
-    # Catches a solver that ignores the given options and keeps its own type.
-    assert solver.getType() == "cg"
-    # Catches a hardcoded factorisation surviving next to the given options,
-    # whether they are ignored outright or merged on top of the defaults.
-    assert solver.getPC().getFactorSolverType() != "mumps"
+    ) as solver:
+        # Catches a solver that ignores the given options and keeps its own type.
+        assert solver.getType() == "cg"
+        # Catches a hardcoded factorisation surviving next to the given options,
+        # whether they are ignored outright or merged on top of the defaults.
+        assert solver.getPC().getFactorSolverType() != "mumps"

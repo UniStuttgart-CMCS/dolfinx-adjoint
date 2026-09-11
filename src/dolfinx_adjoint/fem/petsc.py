@@ -10,17 +10,6 @@ from petsc4py import PETSc
 
 import dolfinx_adjoint.graph as graph
 
-DEFAULT_ADJOINT_PETSC_OPTIONS = {
-    "ksp_type": "preonly",
-    "pc_type": "lu",
-    "pc_factor_mat_solver_type": "mumps",
-    # Options to support solving a singular matrix (pressure nullspace)
-    "mat_mumps_icntl_24": 1,
-    "mat_mumps_icntl_25": 0,
-    "ksp_error_if_not_converged": True,
-}
-"""The options configuring the adjoint solver if the caller does not provide any."""
-
 
 class LinearProblem(LinearProblemBase):
     """OVERLOADS: :py:class:`dolfinx.fem.petsc.LinearProblem`.
@@ -659,7 +648,7 @@ def _create_adjoint_solver(
 
     """
     if petsc_options is None:
-        petsc_options = DEFAULT_ADJOINT_PETSC_OPTIONS
+        petsc_options = {}
     if petsc_options_prefix is None:
         petsc_options_prefix = "dolfinx_adjoint_"
 

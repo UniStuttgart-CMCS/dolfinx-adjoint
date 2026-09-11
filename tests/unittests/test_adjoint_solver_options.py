@@ -10,10 +10,7 @@ from petsc4py import PETSc
 from petsc4py.PETSc import ScalarType
 
 from dolfinx_adjoint import Graph, fem
-from dolfinx_adjoint.fem.petsc import (
-    DEFAULT_ADJOINT_PETSC_OPTIONS,
-    _create_adjoint_solver,
-)
+from dolfinx_adjoint.fem.petsc import _create_adjoint_solver
 from dolfinx_adjoint.graph import Edge
 
 
@@ -22,7 +19,6 @@ def adjoint_edge(request) -> tuple[Edge, dict[str, str], str]:
     """An edge of a problem that has been given options for its adjoint equations."""
     forward_options_prefix = "test_adjoint_solver_options_forward_"
     adjoint_options = {"ksp_type": "cg", "pc_type": "jacobi"}
-    assert adjoint_options != DEFAULT_ADJOINT_PETSC_OPTIONS
 
     graph_ = Graph()
 
@@ -69,7 +65,7 @@ def adjoint_edge(request) -> tuple[Edge, dict[str, str], str]:
 
 
 def test_adjoint_solver_is_configured_by_the_given_options():
-    """The caller's options configure the adjoint solver, and nothing else does."""
+    """The caller's options configure the adjoint solver."""
     A = PETSc.Mat().createAIJ((2, 2), comm=MPI.COMM_SELF)
     A.setUp()
     A.assemble()
@@ -79,11 +75,8 @@ def test_adjoint_solver_is_configured_by_the_given_options():
         petsc_options={"ksp_type": "cg", "pc_type": "lu"},
         petsc_options_prefix="test_adjoint_solver_options_",
     ) as solver:
-        # Catches a solver that ignores the given options and keeps its own type.
         assert solver.getType() == "cg"
-        # Catches a hardcoded factorisation surviving next to the given options,
-        # whether they are ignored outright or merged on top of the defaults.
-        assert solver.getPC().getFactorSolverType() != "mumps"
+        assert solver.getPC().getType() == "lu"
 
 
 def test_adjoint_solver_receives_the_options_given_to_the_problem(

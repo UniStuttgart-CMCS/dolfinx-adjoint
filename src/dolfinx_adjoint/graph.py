@@ -322,6 +322,12 @@ class Graph:
             float or PETSc.Vec: The gradient of the function with respect to the variable,
             if a variable is given. Otherwise the gradients are only stored in the nodes.
 
+        Raises:
+            ValueError: If the function or the variable is not part of the graph, or if
+                the function does not depend on the variable
+            TypeError: If the variable does not represent a numerical value and can
+                therefore not store a gradient
+
         Note:
             The gradients are reset and the marks are refreshed on every call. The result is
             stored in the given variable, or, without a variable, in the dependency leaves.
@@ -338,10 +344,32 @@ class Graph:
 
         """
 
-        self.reset_grads()
         function_node = self.get_node(function_id)
+        if function_node is None:
+            raise ValueError(
+                f"The function with id {function_id} is not part of the graph."
+            )
+
         if variable_id is not None:
             variable_node = self.get_node(variable_id)
+            if variable_node is None:
+                raise ValueError(
+                    f"The variable with id {variable_id} is not part of the graph."
+                )
+            if not isinstance(variable_node, Node):
+                raise TypeError(
+                    f"The variable {variable_node} with id {variable_id} does not represent a numerical value and can therefore not store a gradient."
+                )
+            nx_graph = self._get_networkx_graph()
+            if id(variable_node) not in nx.ancestors(nx_graph, id(function_node)) | {
+                id(function_node)
+            }:
+                raise ValueError(
+                    f"The function with id {function_id} does not depend on the variable with id {variable_id}."
+                )
+
+        self.reset_grads()
+        if variable_id is not None:
             self.get_path(id(variable_node), id(function_node))
         else:
             self.get_dependencies(id(function_node))

@@ -9,6 +9,17 @@ from petsc4py import PETSc
 
 import dolfinx_adjoint.graph as graph
 
+DEFAULT_ADJOINT_PETSC_OPTIONS = {
+    "ksp_type": "preonly",
+    "pc_type": "lu",
+    "pc_factor_mat_solver_type": "mumps",
+    # Options to support solving a singular matrix (pressure nullspace)
+    "mat_mumps_icntl_24": 1,
+    "mat_mumps_icntl_25": 0,
+    "ksp_error_if_not_converged": True,
+}
+"""The options configuring the adjoint solver if the caller does not provide any."""
+
 
 class LinearProblem(LinearProblemBase):
     """OVERLOADS: :py:class:`dolfinx.fem.petsc.LinearProblem`.
@@ -552,31 +563,41 @@ class NonlinearProblem_Boundary_Edge(graph.Edge):
         return gradient
 
 
-def _create_adjoint_solver(A: PETSc.Mat) -> PETSc.KSP:
+def _create_adjoint_solver(
+    A: PETSc.Mat, petsc_options: dict = None, petsc_options_prefix: str = None
+) -> PETSc.KSP:
     """
     Create the linear solver used for the adjoint equations.
 
     Args:
         A (PETSc.Mat): The matrix of the adjoint equation.
+        petsc_options (dict, optional): The PETSc options configuring the solver. They
+            replace `DEFAULT_ADJOINT_PETSC_OPTIONS` rather than adding to them.
+        petsc_options_prefix (str, optional): The options prefix of the solver.
 
     Returns:
         (PETSc.KSP): The solver for the adjoint equation.
 
+    Note:
+        The options remain in the PETSc options database once the solver is created,
+        since the options of the factorisation, such as ``mat_mumps_icntl_24``, are only
+        read when the preconditioner is set up during the solve.
+
     """
+    if petsc_options is None:
+        petsc_options = DEFAULT_ADJOINT_PETSC_OPTIONS
+    if petsc_options_prefix is None:
+        petsc_options_prefix = "dolfinx_adjoint_"
+
     _solver = PETSc.KSP().create(A.comm)
     _solver.setOperators(A)
+    _solver.setOptionsPrefix(petsc_options_prefix)
 
-    _solver.setType("preonly")
-    _solver.getPC().setType("lu")
-    _solver.getPC().setFactorSolverType("mumps")
-    opts = PETSc.Options()
-    opts["mat_mumps_icntl_24"] = (
-        1  # Option to support solving a singular matrix (pressure nullspace)
-    )
-    opts["mat_mumps_icntl_25"] = (
-        0  # Option to support solving a singular matrix (pressure nullspace)
-    )
-    opts["ksp_error_if_not_converged"] = 1
+    # The prefix is prepended to every key explicitly, since PETSc applies the prefix
+    # stack of prefixPush when it sets an option but not when it deletes one.
+    _options = PETSc.Options()
+    for key, value in petsc_options.items():
+        _options[petsc_options_prefix + key] = value
     _solver.setFromOptions()
 
     return _solver

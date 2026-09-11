@@ -531,7 +531,7 @@ class NonlinearProblem_Boundary_Edge(graph.Edge):
         V = u.function_space
         du = ufl.TrialFunction(V)
         J = ufl.derivative(F, u, du)
-        J = fem.petsc.assemble_matrix(fem.form(ufl.derivative(F, u, du)), bcs=bcs)
+        J = fem.petsc.assemble_matrix(fem.form(J), bcs=bcs)
         J.assemble()
 
         # Solve (J⁻¹)ᵀ λ = -x where x is the input with a sparse linear solver

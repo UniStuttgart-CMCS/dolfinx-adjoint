@@ -29,28 +29,26 @@ def assemble_scalar(*args, **kwargs):
         used form to obtain the scalar value.
 
     """
-    if not "graph" in kwargs:
-        output = fem.assemble_scalar(*args, **kwargs)
-    else:
-        _graph = kwargs["graph"]
-        del kwargs["graph"]
-        output = fem.assemble_scalar(*args, **kwargs)
+    _graph = kwargs.pop("graph", None)
+    output = fem.assemble_scalar(*args, **kwargs)
+    if _graph is None:
+        return output
 
-        # Creating and adding node to graph
-        assemble_node = AssembleScalarNode(output, args[0])
-        _graph.add_node(assemble_node)
+    # Creating and adding node to graph
+    assemble_node = AssembleScalarNode(output, args[0])
+    _graph.add_node(assemble_node)
 
-        # Create edge between form and assemble
-        form_node = _graph.get_node(id(args[0]))
+    # Create edge between form and assemble
+    form_node = _graph.get_node(id(args[0]))
 
-        # The default edge is sufficient, since assembling a scalar does not require any additional operations
-        # for the gradients
-        assemble_edge = graph.Edge(form_node, assemble_node)
-        assemble_node.set_gradFuncs([assemble_edge])
+    # The default edge is sufficient, since assembling a scalar does not require any additional operations
+    # for the gradients
+    assemble_edge = graph.Edge(form_node, assemble_node)
+    assemble_node.set_gradFuncs([assemble_edge])
 
-        # Create connectivity to previous edges
-        assemble_edge.set_next_functions(form_node.get_gradFuncs())
-        _graph.add_edge(assemble_edge)
+    # Create connectivity to previous edges
+    assemble_edge.set_next_functions(form_node.get_gradFuncs())
+    _graph.add_edge(assemble_edge)
 
     return output
 

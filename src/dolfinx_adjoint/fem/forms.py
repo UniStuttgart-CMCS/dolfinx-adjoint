@@ -29,40 +29,38 @@ def form(*args, **kwargs):
         are used to keep track of the dependencies and the adjoint equations.
 
     """
-    if not "graph" in kwargs:
-        output = fem.form(*args, **kwargs)
-    else:
-        _graph = kwargs["graph"]
-        del kwargs["graph"]
-        output = fem.form(*args, **kwargs)
+    _graph = kwargs.pop("graph", None)
+    output = fem.form(*args, **kwargs)
+    if _graph is None:
+        return output
 
-        # Creating and adding node to graph
-        form_node = FormNode(output, args[0])
-        _graph.add_node(form_node)
+    # Creating and adding node to graph
+    form_node = FormNode(output, args[0])
+    _graph.add_node(form_node)
 
-        ufl_form = args[0]
+    ufl_form = args[0]
 
-        # Creating and adding edges to the graph if the coefficients are in the graph
-        for coefficient in ufl_form.coefficients():
-            coefficient_node = _graph.get_node(id(coefficient))
-            if not coefficient_node == None:
-                ctx = [ufl_form, coefficient]
-                coefficient_edge = Form_Coefficient_Edge(
-                    coefficient_node, form_node, ctx=ctx
-                )
-                form_node.append_gradFuncs(coefficient_edge)
-                coefficient_edge.set_next_functions(coefficient_node.get_gradFuncs())
-                _graph.add_edge(coefficient_edge)
+    # Creating and adding edges to the graph if the coefficients are in the graph
+    for coefficient in ufl_form.coefficients():
+        coefficient_node = _graph.get_node(id(coefficient))
+        if not coefficient_node == None:
+            ctx = [ufl_form, coefficient]
+            coefficient_edge = Form_Coefficient_Edge(
+                coefficient_node, form_node, ctx=ctx
+            )
+            form_node.append_gradFuncs(coefficient_edge)
+            coefficient_edge.set_next_functions(coefficient_node.get_gradFuncs())
+            _graph.add_edge(coefficient_edge)
 
-        # Creating and adding edges to the graph if the constants are in the graph
-        for constant in ufl_form.constants():
-            constant_node = _graph.get_node(id(constant))
-            if not constant_node == None:
-                ctx = [ufl_form, coefficient]
-                coefficient_edge = Form_Constant_Edge(constant_node, form_node, ctx=ctx)
-                form_node.append_gradFuncs(coefficient_edge)
-                coefficient_edge.set_next_functions(constant_node.get_gradFuncs())
-                _graph.add_edge(coefficient_edge)
+    # Creating and adding edges to the graph if the constants are in the graph
+    for constant in ufl_form.constants():
+        constant_node = _graph.get_node(id(constant))
+        if not constant_node == None:
+            ctx = [ufl_form, coefficient]
+            coefficient_edge = Form_Constant_Edge(constant_node, form_node, ctx=ctx)
+            form_node.append_gradFuncs(coefficient_edge)
+            coefficient_edge.set_next_functions(constant_node.get_gradFuncs())
+            _graph.add_edge(coefficient_edge)
 
     return output
 

@@ -30,31 +30,29 @@ def dirichletbc(*args, map=None, **kwargs):
         space and the value is the index in the wrong space.
 
     """
-    if not "graph" in kwargs:
-        output = fem.dirichletbc(*args, **kwargs)
-    else:
-        _graph = kwargs["graph"]
-        del kwargs["graph"]
-        output = fem.dirichletbc(*args, **kwargs)
+    _graph = kwargs.pop("graph", None)
+    output = fem.dirichletbc(*args, **kwargs)
+    if _graph is None:
+        return output
 
-        # Creating and adding node to graph
-        dirichletbc_node = graph.AbstractNode(output)
-        _graph.add_node(dirichletbc_node)
+    # Creating and adding node to graph
+    dirichletbc_node = graph.AbstractNode(output)
+    _graph.add_node(dirichletbc_node)
 
-        # The boundary condition provides its dofs unrolled, so that they address the
-        # entries of the gradient also in a blocked vector space, where the dofs given
-        # to the boundary condition address blocks of components. They are a single
-        # array also when the boundary condition couples a sub space with its
-        # collapsed space, in which case the indices are the ones of the sub space.
-        dofs = output.dof_indices()[0]
-        ctx = [dofs, map]
+    # The boundary condition provides its dofs unrolled, so that they address the
+    # entries of the gradient also in a blocked vector space, where the dofs given
+    # to the boundary condition address blocks of components. They are a single
+    # array also when the boundary condition couples a sub space with its
+    # collapsed space, in which case the indices are the ones of the sub space.
+    dofs = output.dof_indices()[0]
+    ctx = [dofs, map]
 
-        # Creating the edge between the DirichletBC and the function defining the value of the BC
-        value_node = _graph.get_node(id(args[0]))
-        dirichletbc_edge = DirichletBC_Edge(value_node, dirichletbc_node, ctx=ctx)
-        dirichletbc_edge.set_next_functions(value_node.get_gradFuncs())
-        dirichletbc_node.set_gradFuncs([dirichletbc_edge])
-        _graph.add_edge(dirichletbc_edge)
+    # Creating the edge between the DirichletBC and the function defining the value of the BC
+    value_node = _graph.get_node(id(args[0]))
+    dirichletbc_edge = DirichletBC_Edge(value_node, dirichletbc_node, ctx=ctx)
+    dirichletbc_edge.set_next_functions(value_node.get_gradFuncs())
+    dirichletbc_node.set_gradFuncs([dirichletbc_edge])
+    _graph.add_edge(dirichletbc_edge)
 
     return output
 

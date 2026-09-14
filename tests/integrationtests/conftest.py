@@ -135,6 +135,11 @@ def poisson_problem(cell_type, solver: bool, boundary_condition):
                 "snes_rtol": 1e-12,
                 "snes_error_if_not_converged": True,
             },
+            adjoint_petsc_options={
+                "ksp_type": "preonly",
+                "pc_type": "lu",
+                "ksp_error_if_not_converged": True,
+            },
             graph=graph_,
         )
         problem.solve(graph=graph_)
@@ -145,6 +150,11 @@ def poisson_problem(cell_type, solver: bool, boundary_condition):
             bcs=bcs,
             petsc_options_prefix="forward_linear",
             petsc_options=petsc_options,
+            adjoint_petsc_options={
+                "ksp_type": "preonly",
+                "pc_type": "lu",
+                "ksp_error_if_not_converged": True,
+            },
             graph=graph_,
         )
         problem.solve(graph=graph_)
@@ -221,6 +231,11 @@ def plane_elasticity_problem():
         bcs=bcs,
         petsc_options_prefix="plane_elasticity_",
         petsc_options={
+            "ksp_type": "preonly",
+            "pc_type": "lu",
+            "ksp_error_if_not_converged": True,
+        },
+        adjoint_petsc_options={
             "ksp_type": "preonly",
             "pc_type": "lu",
             "ksp_error_if_not_converged": True,
@@ -306,6 +321,11 @@ def linear_elasticity_problem():
         bcs=[bc],
         petsc_options={"ksp_type": "preonly", "pc_type": "lu"},
         petsc_options_prefix="linear_elasticity",
+        adjoint_petsc_options={
+            "ksp_type": "preonly",
+            "pc_type": "lu",
+            "ksp_error_if_not_converged": True,
+        },
         graph=graph_,
     )
     problem.solve(graph=graph_)
@@ -473,6 +493,11 @@ def stokes_problem():
         up,
         bcs=bcs,
         petsc_options_prefix="forward_nonlinear",
+        adjoint_petsc_options={
+            "ksp_type": "preonly",
+            "pc_type": "lu",
+            "ksp_error_if_not_converged": True,
+        },
         graph=graph_,
     )
     problem.solve(graph=graph_)
@@ -584,6 +609,11 @@ def heat_equation_problem():
             L,
             u=u_next,
             petsc_options_prefix="forward_linear",
+            adjoint_petsc_options={
+                "ksp_type": "preonly",
+                "pc_type": "lu",
+                "ksp_error_if_not_converged": True,
+            },
             graph=graph_,
         )
         problem.solve(graph=graph_, version=i)

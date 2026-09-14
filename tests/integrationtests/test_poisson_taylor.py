@@ -7,8 +7,14 @@ checking that the first-order Taylor remainder converges with rate two.
 """
 
 import numpy as np
+import pytest
 from dolfinx import fem
 from mpi4py import MPI
+
+pytestmark = pytest.mark.skipif(
+    MPI.COMM_WORLD.size > 1,
+    reason="Taylor tests are only run in serial.",
+)
 
 
 def _convergence_rates(errors: np.ndarray, steps: np.ndarray) -> list:

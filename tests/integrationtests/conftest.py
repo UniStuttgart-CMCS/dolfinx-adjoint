@@ -6,6 +6,8 @@ correctly computes gradients using the adjoint method by comparing against
 explicit adjoint calculations.
 """
 
+import gc
+
 import gmsh
 import numpy as np
 import pytest
@@ -49,6 +51,8 @@ def boundary_condition(request):
 @pytest.fixture(scope="module")
 def poisson_problem(cell_type, solver: bool, boundary_condition):
     """Set up the Poisson problem that will be used in all tests."""
+    gc.collect()
+
     # Create graph object to store the computational graph
     graph_ = Graph()
 
@@ -97,8 +101,10 @@ def poisson_problem(cell_type, solver: bool, boundary_condition):
 
     if boundary_condition == "inflow":
         control_dofs = boundary_dofs_L
-        bcs_dofs = np.concatenate(
-            [boundary_dofs_L, boundary_dofs_R, boundary_dofs_T, boundary_dofs_B]
+        bcs_dofs = np.unique(
+            np.concatenate(
+                [boundary_dofs_L, boundary_dofs_R, boundary_dofs_T, boundary_dofs_B]
+            )
         )
         bcs = [
             fem.dirichletbc(uD_control, boundary_dofs_L, graph=graph_),

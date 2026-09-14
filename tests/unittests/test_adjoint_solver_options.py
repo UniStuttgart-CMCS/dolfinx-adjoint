@@ -1,5 +1,3 @@
-from contextlib import contextmanager
-
 import numpy as np
 import pytest
 import ufl
@@ -10,15 +8,16 @@ from petsc4py import PETSc
 from petsc4py.PETSc import ScalarType
 
 from dolfinx_adjoint import Graph, fem
-from dolfinx_adjoint.fem.petsc import _create_adjoint_solver
+from dolfinx_adjoint.fem.petsc import AdjointProblem
 from dolfinx_adjoint.graph import Edge
 
 
 @pytest.fixture(params=["coefficient", "constant", "boundary"])
-def adjoint_edge(request) -> tuple[Edge, dict[str, str], str]:
+def adjoint_edge(request, option) -> Edge:
     """An edge of a problem that has been given options for its adjoint equations."""
     forward_options_prefix = "test_adjoint_solver_options_forward_"
     adjoint_options = {"ksp_type": "cg", "pc_type": "jacobi"}
+    adjoint_options[option] = "invalid_adjoint_solver_for_test"
 
     graph_ = Graph()
 
@@ -61,57 +60,60 @@ def adjoint_edge(request) -> tuple[Edge, dict[str, str], str]:
 
     edge.input_value = create_vector(V)
 
-    return edge, adjoint_options, forward_options_prefix + "adjoint_"
+    return edge
 
 
-def test_adjoint_solver_is_configured_by_the_given_options():
+@pytest.fixture
+def adjoint_problem_data():
+    """Form, vector, and solution for configuring an adjoint problem."""
+    domain = mesh.create_unit_interval(MPI.COMM_SELF, 4)
+    V = fem.functionspace(domain, ("Lagrange", 1))
+    a = ufl.inner(ufl.TrialFunction(V), ufl.TestFunction(V)) * ufl.dx
+    b = create_vector(V)
+    b.set(0.0)
+    try:
+        yield a, b, fem.Function(V)
+    finally:
+        b.destroy()
+
+
+def test_adjoint_solver_is_configured_by_the_given_options(adjoint_problem_data):
     """The caller's options configure the adjoint solver."""
-    A = PETSc.Mat().createAIJ((2, 2), comm=MPI.COMM_SELF)
-    A.setUp()
-    A.assemble()
-
-    with _create_adjoint_solver(
-        A,
+    problem = AdjointProblem(
+        *adjoint_problem_data,
         petsc_options={"ksp_type": "cg", "pc_type": "lu"},
         petsc_options_prefix="test_adjoint_solver_options_",
-    ) as solver:
-        assert solver.getType() == "cg"
-        assert solver.getPC().getType() == "lu"
+    )
+    assert problem.solver.getType() == "cg"
+    assert problem.solver.getPC().getType() == "lu"
 
 
-def test_adjoint_solver_receives_the_options_given_to_the_problem(
-    adjoint_edge, monkeypatch
-):
-    """Each edge creates its adjoint solver with the options of its problem."""
-    edge, petsc_options, petsc_options_prefix = adjoint_edge
-
-    created_with = []
-
-    @contextmanager
-    def _record(A, petsc_options=None, petsc_options_prefix=None):
-        created_with.append((petsc_options, petsc_options_prefix))
-        with _create_adjoint_solver(A, petsc_options, petsc_options_prefix) as solver:
-            yield solver
-
-    monkeypatch.setattr(fem.petsc, "_create_adjoint_solver", _record)
-
-    edge.calculate_adjoint()
-
-    assert created_with == [(petsc_options, petsc_options_prefix)]
+@pytest.mark.parametrize("option", ["ksp_type", "pc_type"])
+def test_adjoint_solver_receives_the_options_given_to_the_problem(adjoint_edge):
+    """Each edge lets PETSc reject invalid adjoint KSP and PC options."""
+    with pytest.raises(PETSc.Error, match="invalid_adjoint_solver_for_test"):
+        adjoint_edge.calculate_adjoint()
 
 
-def test_adjoint_solver_removes_its_options_from_the_database():
+def test_adjoint_solver_removes_its_options_from_the_database(adjoint_problem_data):
     """The solver takes the options it sets out of the global database again."""
-    A = PETSc.Mat().createAIJ((2, 2), comm=MPI.COMM_SELF)
-    A.setUp()
-    A.assemble()
-
     prefix = "test_adjoint_solver_database_"
-    with _create_adjoint_solver(
-        A,
+    problem = AdjointProblem(
+        *adjoint_problem_data,
         petsc_options={"ksp_type": "cg"},
         petsc_options_prefix=prefix,
-    ):
-        pass
+    )
+    del problem
 
     assert prefix + "ksp_type" not in PETSc.Options()
+
+
+def test_adjoint_solver_is_destroyed_after_use(adjoint_problem_data):
+    """The solver of the adjoint equations is destroyed when it is no longer used."""
+    problem = AdjointProblem(
+        *adjoint_problem_data, petsc_options_prefix="test_adjoint_solver_lifetime_"
+    )
+    solver = problem.solver
+    del problem
+
+    assert solver.handle == 0

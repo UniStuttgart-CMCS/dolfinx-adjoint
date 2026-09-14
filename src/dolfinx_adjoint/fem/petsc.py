@@ -1,12 +1,10 @@
-from collections.abc import Generator
-from contextlib import contextmanager
 from typing import Any
 
 import ufl
-from dolfinx import fem, la
+from dolfinx import fem
 from dolfinx.fem.petsc import LinearProblem as LinearProblemBase
 from dolfinx.fem.petsc import NonlinearProblem as NonlinearProblemBase
-from dolfinx.fem.petsc import assign, create_vector, set_bc
+from dolfinx.fem.petsc import assign, set_bc
 from petsc4py import PETSc
 
 import dolfinx_adjoint.graph as graph
@@ -444,24 +442,21 @@ class NonlinearProblem_Coefficient_Edge(graph.Edge):
         u = u_node.get_object()
         u_next = _graph.get_node(u_node.id, version=u_node.version + 1)
 
-        # Construct the Jacobian J = ∂F/∂u
+        # Construct the transpose of the Jacobian J = ∂F/∂u
         V = u.function_space
         du = ufl.TrialFunction(V)
         F_manipulated = ufl.replace(F, {u: u_next.data, m: m_node.data})
-        J = fem.petsc.assemble_matrix(
-            fem.form(ufl.derivative(F_manipulated, u_node.data, du)), bcs=bcs
-        )
-        J.assemble()
+        J_adjoint = ufl.adjoint(ufl.derivative(F_manipulated, u_node.data, du))
 
         # Solve (J⁻¹)ᵀ λ = -x where x is the input with a sparse linear solver
-        adjoint_solution = AdjointProblemSolver(
-            J.transpose(),
+        adjoint_solution = AdjointProblem(
+            J_adjoint,
             -self.input_value,
             fem.Function(V),
             bcs=bcs,
             petsc_options=self.successor.adjoint_petsc_options,
             petsc_options_prefix=self.successor.adjoint_petsc_options_prefix,
-        )
+        ).solve()
 
         # Calculate ∂F/∂m
         dFdm = fem.petsc.assemble_matrix(
@@ -503,21 +498,20 @@ class NonlinearProblem_Constant_Edge(graph.Edge):
 
         u = u_node.get_object()
 
-        # Construct the Jacobian J = ∂F/∂u
+        # Construct the transpose of the Jacobian J = ∂F/∂u
         V = u.function_space
         du = ufl.TrialFunction(V)
-        J = fem.petsc.assemble_matrix(fem.form(ufl.derivative(F, u, du)), bcs=bcs)
-        J.assemble()
+        J_adjoint = ufl.adjoint(ufl.derivative(F, u, du))
 
         # Solve (J⁻¹)ᵀ λ = -x where x is the input with a sparse linear solver
-        adjoint_solution = AdjointProblemSolver(
-            J.transpose(),
+        adjoint_solution = AdjointProblem(
+            J_adjoint,
             -self.input_value,
             fem.Function(V),
             bcs=bcs,
             petsc_options=self.successor.adjoint_petsc_options,
             petsc_options_prefix=self.successor.adjoint_petsc_options_prefix,
-        )
+        ).solve()
 
         # Create a function based on the constant in order to use ufl.derivative
         # to calculate ∂F/∂m
@@ -575,22 +569,20 @@ class NonlinearProblem_Boundary_Edge(graph.Edge):
         # homogenises the right-hand side it is derived from.
         direct_contribution = self.input_value.copy()
 
-        # Construct the Jacobian J = ∂F/∂u
+        # Construct the transpose of the Jacobian J = ∂F/∂u
         V = u.function_space
         du = ufl.TrialFunction(V)
-        J = ufl.derivative(F, u, du)
-        J = fem.petsc.assemble_matrix(fem.form(J), bcs=bcs)
-        J.assemble()
+        J_adjoint = ufl.adjoint(ufl.derivative(F, u, du))
 
         # Solve (J⁻¹)ᵀ λ = -x where x is the input with a sparse linear solver
-        adjoint_solution = AdjointProblemSolver(
-            J.transpose(),
+        adjoint_solution = AdjointProblem(
+            J_adjoint,
             -self.input_value,
             fem.Function(V),
             bcs=bcs,
             petsc_options=self.successor.adjoint_petsc_options,
             petsc_options_prefix=self.successor.adjoint_petsc_options_prefix,
-        )
+        ).solve()
 
         # ∂F/∂m = dFdbc defined in the nonlinear problem as a fem.Form
         dFdbc = fem.petsc.assemble_matrix(dFdbc_form)
@@ -605,83 +597,67 @@ class NonlinearProblem_Boundary_Edge(graph.Edge):
         return gradient
 
 
-@contextmanager
-def _create_adjoint_solver(
-    A: PETSc.Mat,
-    petsc_options: dict | None = None,
-    petsc_options_prefix: str | None = None,
-) -> Generator[PETSc.KSP, None, None]:
-    """
-    Create the linear solver used for the adjoint equations.
+class AdjointProblem(LinearProblemBase):
+    """OVERLOADS: :py:class:`dolfinx.fem.petsc.LinearProblem`.
 
-    Args:
-        A (PETSc.Mat): The matrix of the adjoint equation.
-        petsc_options (dict, optional): The PETSc options configuring the solver. They
-            replace `DEFAULT_ADJOINT_PETSC_OPTIONS` rather than adding to them.
-        petsc_options_prefix (str, optional): The options prefix of the solver.
-
-    Yields:
-        (PETSc.KSP): The solver for the adjoint equation.
-
-    """
-    if petsc_options is None:
-        petsc_options = {}
-    if petsc_options_prefix is None:
-        petsc_options_prefix = "dolfinx_adjoint_"
-
-    _solver = PETSc.KSP().create(A.comm)
-    _solver.setOperators(A)
-    _solver.setOptionsPrefix(petsc_options_prefix)
-
-    # The prefix is prepended to every key explicitly, since PETSc applies the prefix
-    # stack of prefixPush when it sets an option but not when it deletes one.
-    _options = PETSc.Options()
-    try:
-        for key, value in petsc_options.items():
-            _options[petsc_options_prefix + key] = value
-        _solver.setFromOptions()
-
-        yield _solver
-    finally:
-        for key in petsc_options:
-            del _options[petsc_options_prefix + key]
-
-
-def AdjointProblemSolver(
-    A: PETSc.Mat,
-    b: PETSc.Vec,
-    x: fem.Function,
-    bcs=None,
-    petsc_options: dict | None = None,
-    petsc_options_prefix: str | None = None,
-):
-    """
-    Linear solver using PETSc as a linear algebra backend for the adjoint equations.
-
-    Args:
-        A (PETSc.Mat): The matrix of the adjoint equation.
-        b (PETSc.Vec): The right-hand side of the adjoint equation.
-        x (fem.Function): The solution of the adjoint equation.
-        bcs (list): The boundary conditions of the adjoint equation.
-        petsc_options (dict, optional): The PETSc options configuring the solver.
-        petsc_options_prefix (str, optional): The options prefix of the solver.
-
-    Returns:
-        (fem.Function): The solution of the adjoint equation.
-
+    Solve an adjoint bilinear form against a vector with homogeneous Dirichlet
+    conditions. DOLFINx owns and destroys the matrix, vectors, and KSP.
     """
 
-    _x = create_vector(x.function_space)
+    def __init__(
+        self,
+        a: ufl.Form,
+        b: PETSc.Vec,
+        u: fem.Function,
+        bcs=None,
+        petsc_options: dict | None = None,
+        petsc_options_prefix: str | None = None,
+    ):
+        """Initialize the adjoint problem.
 
-    _b = PETSc.Vec().createWithArray(b)
-    if bcs is not None:
-        set_bc(_b, bcs, alpha=0.0)
+        Args:
+            a: The bilinear form of the adjoint equation.
+            b: The right-hand side vector. Its owned entries are copied.
+            u: The solution function.
+            bcs: Boundary conditions whose constrained entries are set to zero.
+            petsc_options: Options configuring the adjoint KSP.
+            petsc_options_prefix: Solver options prefix, defaulting to
+                ``dolfinx_adjoint_``.
+        """
+        if petsc_options_prefix is None:
+            petsc_options_prefix = "dolfinx_adjoint_"
 
-    with _create_adjoint_solver(
-        A, petsc_options=petsc_options, petsc_options_prefix=petsc_options_prefix
-    ) as _solver:
-        _solver.solve(_b, _x)
+        # The zero form supplies the vector layout without an unused RHS kernel.
+        super().__init__(
+            a,
+            ufl.ZeroBaseForm((a.arguments()[0],)),
+            u=u,
+            bcs=bcs,
+            petsc_options_prefix=petsc_options_prefix,
+        )
+        b.copy(self.b)
 
-    assign(_x, x)
+        options = PETSc.Options(petsc_options_prefix)
+        petsc_options = {} if petsc_options is None else petsc_options
+        try:
+            for key, value in petsc_options.items():
+                options[key] = value
+            self.solver.setFromOptions()
+        finally:
+            for key in petsc_options:
+                del options[key]
 
-    return x
+    def solve(self) -> fem.Function:
+        """Solve using the supplied vector, without RHS assembly or lifting.
+
+        Returns:
+            The solution function with updated ghost entries.
+        """
+        self.A.zeroEntries()
+        fem.petsc.assemble_matrix(self.A, self.a, bcs=self.bcs)
+        self.A.assemble()
+        set_bc(self.b, self.bcs, alpha=0.0)
+        self.solver.solve(self.b, self.x)
+        self.x.ghostUpdate(addv=PETSc.InsertMode.INSERT, mode=PETSc.ScatterMode.FORWARD)
+        assign(self.x, self.u)
+        return self.u

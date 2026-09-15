@@ -10,6 +10,7 @@ import numpy as np
 import ufl
 from dolfinx import fem
 from dolfinx.fem.petsc import LinearProblem
+from mpi4py import MPI
 from petsc4py.PETSc import ScalarType
 
 
@@ -75,8 +76,12 @@ def test_material_param_lambda(linear_elasticity_problem):
             "ksp_error_if_not_converged": True,
         },
     ).solve()
-    dJdlambda = fem.assemble_scalar(
-        fem.form(ufl.action(ufl.adjoint(dFdlambda), adjoint_solution))
+
+    dJdlambda = domain.comm.allreduce(
+        fem.assemble_scalar(
+            fem.form(ufl.action(ufl.adjoint(dFdlambda), adjoint_solution))
+        ),
+        op=MPI.SUM,
     )
 
     # Compare automatic differentiation result with explicit adjoint calculation
@@ -145,8 +150,10 @@ def test_material_param_mu(linear_elasticity_problem):
         },
         petsc_options_prefix="adjoint_",
     ).solve()
-    dJdmu = fem.assemble_scalar(
-        fem.form(ufl.action(ufl.adjoint(dFdmu), adjoint_solution))
+
+    dJdmu = domain.comm.allreduce(
+        fem.assemble_scalar(fem.form(ufl.action(ufl.adjoint(dFdmu), adjoint_solution))),
+        op=MPI.SUM,
     )
 
     # Compare automatic differentiation result with explicit adjoint calculation

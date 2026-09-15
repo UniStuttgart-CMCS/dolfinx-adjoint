@@ -196,6 +196,8 @@ def poisson_problem(cell_type, solver: bool, boundary_condition):
 @pytest.fixture(scope="module")
 def plane_elasticity_problem():
     """Set up a plane elasticity problem with a controlled Dirichlet boundary."""
+    gc.collect()
+
     graph_ = Graph()
 
     domain = mesh.create_unit_square(MPI.COMM_WORLD, 64, 64, mesh.CellType.triangle)
@@ -271,6 +273,8 @@ def plane_elasticity_problem():
 @pytest.fixture(scope="module")
 def linear_elasticity_problem():
     """Set up the linear elasticity problem that will be used in all tests."""
+    gc.collect()
+
     # Scaled variable
     L = 1
     W = 0.1

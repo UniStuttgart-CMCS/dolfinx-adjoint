@@ -559,6 +559,8 @@ def stokes_problem():
 @pytest.fixture(scope="module")
 def heat_equation_problem():
     """Set up the heat equation problem that will be used in all tests."""
+    gc.collect()
+
     domain = mesh.create_unit_square(MPI.COMM_WORLD, 32, 32, mesh.CellType.triangle)
     V = fem.functionspace(domain, ("Lagrange", 1))
 
@@ -575,13 +577,6 @@ def heat_equation_problem():
 
     v = ufl.TestFunction(V)
     dt_constant = fem.Constant(domain, ScalarType(dt))
-
-    # Set dirichlet boundary conditions
-    uD = fem.Function(V)
-    uD.interpolate(lambda x: 0.0 + 0.0 * x[0])
-    tdim = domain.topology.dim
-    fdim = tdim - 1
-    domain.topology.create_connectivity(fdim, tdim)
 
     u = ufl.TrialFunction(V)
     a = (

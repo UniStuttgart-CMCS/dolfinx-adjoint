@@ -68,6 +68,7 @@ def test_Heat_initial(heat_equation_problem):
             petsc_options={
                 "ksp_type": "preonly",
                 "pc_type": "lu",
+                "pc_factor_mat_solver_type": "mumps",
                 "ksp_error_if_not_converged": True,
             },
         ).solve()

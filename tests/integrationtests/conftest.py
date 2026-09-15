@@ -123,10 +123,17 @@ def poisson_problem(cell_type, solver: bool, boundary_condition):
     else:
         raise ValueError(f"Unknown boundary condition: {boundary_condition}")
 
-    # Define the problem solver and solve it
+    # We use a direct solve for both the forward and adjoint problems with MUMPS to keep the same factorisation across rank counts.
     petsc_options = {
         "ksp_type": "preonly",
         "pc_type": "lu",
+        "pc_factor_mat_solver_type": "mumps",
+        "ksp_error_if_not_converged": True,
+    }
+    adjoint_petsc_options = {
+        "ksp_type": "preonly",
+        "pc_type": "lu",
+        "pc_factor_mat_solver_type": "mumps",
         "ksp_error_if_not_converged": True,
     }
     if solver == "nonlinear":
@@ -141,11 +148,7 @@ def poisson_problem(cell_type, solver: bool, boundary_condition):
                 "snes_rtol": 1e-12,
                 "snes_error_if_not_converged": True,
             },
-            adjoint_petsc_options={
-                "ksp_type": "preonly",
-                "pc_type": "lu",
-                "ksp_error_if_not_converged": True,
-            },
+            adjoint_petsc_options=adjoint_petsc_options,
             graph=graph_,
         )
         problem.solve(graph=graph_)
@@ -156,11 +159,7 @@ def poisson_problem(cell_type, solver: bool, boundary_condition):
             bcs=bcs,
             petsc_options_prefix="forward_linear",
             petsc_options=petsc_options,
-            adjoint_petsc_options={
-                "ksp_type": "preonly",
-                "pc_type": "lu",
-                "ksp_error_if_not_converged": True,
-            },
+            adjoint_petsc_options=adjoint_petsc_options,
             graph=graph_,
         )
         problem.solve(graph=graph_)
@@ -230,6 +229,7 @@ def plane_elasticity_problem():
 
     bcs = [fem.dirichletbc(uD_control, control_dofs, graph=graph_)]
 
+    # We use a direct solve for both the forward and adjoint problems with MUMPS to keep the same factorisation across rank counts.
     problem = fem.petsc.LinearProblem(
         a,
         L,
@@ -239,11 +239,13 @@ def plane_elasticity_problem():
         petsc_options={
             "ksp_type": "preonly",
             "pc_type": "lu",
+            "pc_factor_mat_solver_type": "mumps",
             "ksp_error_if_not_converged": True,
         },
         adjoint_petsc_options={
             "ksp_type": "preonly",
             "pc_type": "lu",
+            "pc_factor_mat_solver_type": "mumps",
             "ksp_error_if_not_converged": True,
         },
         graph=graph_,
@@ -320,16 +322,23 @@ def linear_elasticity_problem():
 
     bc = fem.dirichletbc(u_D, bcs_dofs, V)
 
+    # We use a direct solve for both the forward and adjoint problems with MUMPS to keep the same factorisation across rank counts.
     problem = fem.petsc.LinearProblem(
         a,
         L,
         u=uh,
         bcs=[bc],
-        petsc_options={"ksp_type": "preonly", "pc_type": "lu"},
+        petsc_options={
+            "ksp_type": "preonly",
+            "pc_type": "lu",
+            "pc_factor_mat_solver_type": "mumps",
+            "ksp_error_if_not_converged": True,
+        },
         petsc_options_prefix="linear_elasticity",
         adjoint_petsc_options={
             "ksp_type": "preonly",
             "pc_type": "lu",
+            "pc_factor_mat_solver_type": "mumps",
             "ksp_error_if_not_converged": True,
         },
         graph=graph_,
@@ -493,15 +502,24 @@ def stokes_problem():
     L = ufl.inner(f, v) * ufl.dx
     F = a - L
 
-    # Define the problem solver
+    # We use a direct solve for both the forward and adjoint problems with MUMPS to keep the same factorisation across rank counts.
+    # As the Stokes system is a saddle point system, the pressure block of the Jacobian is zero. MUMPS reorders around it, while the built-in LU factorisation of PETSc does not pivot dynamically and raises on such a pivot.
     problem = fem.petsc.NonlinearProblem(
         F,
         up,
         bcs=bcs,
         petsc_options_prefix="forward_nonlinear",
+        petsc_options={
+            "ksp_type": "preonly",
+            "pc_type": "lu",
+            "pc_factor_mat_solver_type": "mumps",
+            "ksp_error_if_not_converged": True,
+            "snes_error_if_not_converged": True,
+        },
         adjoint_petsc_options={
             "ksp_type": "preonly",
             "pc_type": "lu",
+            "pc_factor_mat_solver_type": "mumps",
             "ksp_error_if_not_converged": True,
         },
         graph=graph_,
@@ -571,11 +589,19 @@ def heat_equation_problem():
         + ufl.inner(ufl.grad(u), ufl.grad(v)) * ufl.dx
     )
     L = ufl.inner(u_prev / dt_constant, v) * ufl.dx
+
+    # We use a direct solve for both the forward and adjoint problems with MUMPS to keep the same factorisation across rank counts.
     problem = fem.petsc.LinearProblem(
         a,
         L,
         u=u_next,
         petsc_options_prefix="forward_linear",
+        petsc_options={
+            "ksp_type": "preonly",
+            "pc_type": "lu",
+            "pc_factor_mat_solver_type": "mumps",
+            "ksp_error_if_not_converged": True,
+        },
     )
 
     t = 0.0
@@ -615,9 +641,16 @@ def heat_equation_problem():
             L,
             u=u_next,
             petsc_options_prefix="forward_linear",
+            petsc_options={
+                "ksp_type": "preonly",
+                "pc_type": "lu",
+                "pc_factor_mat_solver_type": "mumps",
+                "ksp_error_if_not_converged": True,
+            },
             adjoint_petsc_options={
                 "ksp_type": "preonly",
                 "pc_type": "lu",
+                "pc_factor_mat_solver_type": "mumps",
                 "ksp_error_if_not_converged": True,
             },
             graph=graph_,

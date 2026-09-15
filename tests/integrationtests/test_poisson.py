@@ -67,6 +67,7 @@ def test_Poisson_dJdf(poisson_problem):
         petsc_options={
             "ksp_type": "preonly",
             "pc_type": "lu",
+            "pc_factor_mat_solver_type": "mumps",
             "ksp_error_if_not_converged": True,
         },
     ).solve()
@@ -140,6 +141,7 @@ def test_Poisson_dJdnu(poisson_problem):
         petsc_options={
             "ksp_type": "preonly",
             "pc_type": "lu",
+            "pc_factor_mat_solver_type": "mumps",
             "ksp_error_if_not_converged": True,
         },
     ).solve()
@@ -226,6 +228,7 @@ def test_Poisson_dJdbc(poisson_problem):
         petsc_options={
             "ksp_type": "preonly",
             "pc_type": "lu",
+            "pc_factor_mat_solver_type": "mumps",
             "ksp_error_if_not_converged": True,
         },
     ).solve()

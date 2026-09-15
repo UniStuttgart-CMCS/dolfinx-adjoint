@@ -71,6 +71,7 @@ def test_material_param_lambda(linear_elasticity_problem):
         petsc_options={
             "ksp_type": "preonly",
             "pc_type": "lu",
+            "pc_factor_mat_solver_type": "mumps",
             "ksp_error_if_not_converged": True,
         },
     ).solve()
@@ -139,6 +140,7 @@ def test_material_param_mu(linear_elasticity_problem):
         petsc_options={
             "ksp_type": "preonly",
             "pc_type": "lu",
+            "pc_factor_mat_solver_type": "mumps",
             "ksp_error_if_not_converged": True,
         },
         petsc_options_prefix="adjoint_",

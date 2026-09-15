@@ -7,14 +7,8 @@ components rather than a single entry of the gradient.
 """
 
 import numpy as np
-import pytest
 from dolfinx import fem
 from mpi4py import MPI
-
-pytestmark = pytest.mark.skipif(
-    MPI.COMM_WORLD.size > 1,
-    reason="Taylor tests are only run in serial.",
-)
 
 
 def _convergence_rates(errors: np.ndarray, steps: np.ndarray) -> list:
@@ -44,7 +38,7 @@ def test_plane_elasticity_taylor_bc(plane_elasticity_problem):
     direction = fem.Function(uD_control.function_space)
     direction.interpolate(lambda x: np.stack((np.sin(np.pi * x[0]), 1.0 + 0.5 * x[1])))
 
-    dJ = comm.allreduce(np.dot(grad_array, direction.x.array), op=MPI.SUM)
+    dJ = grad.dot(direction.x.petsc_vec)
 
     u_org = uD_control.x.array.copy()
     step_length = 1e-2

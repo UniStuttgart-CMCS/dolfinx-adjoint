@@ -9,6 +9,7 @@ import numpy as np
 import ufl
 from dolfinx import fem, la
 from dolfinx.fem.petsc import LinearProblem
+from mpi4py import MPI
 
 
 def test_Heat_initial(heat_equation_problem):
@@ -43,6 +44,7 @@ def test_Heat_initial(heat_equation_problem):
 
         $$\\frac{dJ}{du_0} = \\lambda_1^T \\frac{\\partial F}{\\partial u_0} + \\frac{\\partial J}{\\partial u_0}$$
     """
+    domain = heat_equation_problem["domain"]
     graph_ = heat_equation_problem["graph_"]
     J_form = heat_equation_problem["J_form"]
     J = heat_equation_problem["J"]
@@ -81,5 +83,10 @@ def test_Heat_initial(heat_equation_problem):
     gradient.scatter_reverse(la.InsertMode.add)
     gradient.scatter_forward()
 
-    # Compare automatic differentiation result with explicit adjoint calculation
-    assert np.allclose(graph_.backprop(id(J), id(initial_guess)), gradient.array)
+    # Compare automatic differentiation result with explicit adjoint calculation on the dofs owned by the calling rank.
+    assert domain.comm.allreduce(
+        np.allclose(
+            graph_.backprop(id(J), id(initial_guess)).array, gradient.petsc_vec.array
+        ),
+        op=MPI.LAND,
+    )

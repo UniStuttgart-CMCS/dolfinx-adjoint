@@ -117,6 +117,7 @@ def test_Stokes_dJdg(stokes_problem):
     We extract only the boundary values by multiplying with an identity matrix
     nonzero on the boundary.
     """
+    mesh = stokes_problem["mesh"]
     V = stokes_problem["V"]
     V_u_map = stokes_problem["V_u_map"]
     up = stokes_problem["up"]
@@ -167,10 +168,14 @@ def test_Stokes_dJdg(stokes_problem):
     dJdup_vec.scatter_forward()
 
     # Extract obstacle boundary values and map to the collapsed velocity space.
-    boundary_gradient = np.zeros_like(gradient.array)
-    boundary_gradient[dofs_obstacle[0]] = (
+    boundary_gradient = fem.Function(V)
+    boundary_gradient.x.array[dofs_obstacle[0]] = (
         gradient.array[dofs_obstacle[0]] + dJdup_vec.array[dofs_obstacle[0]]
     )
-    gradient = boundary_gradient[V_u_map] + dJdg_vec.array
+    dJdg_vec.array[:] += boundary_gradient.x.array[V_u_map]
 
-    assert np.allclose(gradient, graph_.backprop(id(J), id(g)))
+    # Compare automatic differentiation result with explicit adjoint calculation on the dofs owned by the calling rank.
+    assert mesh.comm.allreduce(
+        np.allclose(graph_.backprop(id(J), id(g)).array, dJdg_vec.petsc_vec.array),
+        op=MPI.LAND,
+    )

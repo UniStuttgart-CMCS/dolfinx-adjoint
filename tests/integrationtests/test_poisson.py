@@ -39,6 +39,7 @@ def test_Poisson_dJdf(poisson_problem):
         dJ/df = λᵀ * ∂F/∂f + ∂J/∂f                                  (1.5)
     """
 
+    domain = poisson_problem["domain"]
     F = poisson_problem["F"]
     uh = poisson_problem["uh"]
     f = poisson_problem["f"]
@@ -77,8 +78,11 @@ def test_Poisson_dJdf(poisson_problem):
     gradient_df.scatter_reverse(la.InsertMode.add)
     gradient_df.scatter_forward()
 
-    # Compare automatic differentiation result with explicit adjoint calculation
-    assert np.allclose(graph_.backprop(id(J), id(f)), gradient_df.array[:])
+    # Compare automatic differentiation result with explicit adjoint calculation on the dofs owned by the calling rank.
+    assert domain.comm.allreduce(
+        np.allclose(graph_.backprop(id(J), id(f)).array, gradient_df.petsc_vec.array),
+        op=MPI.LAND,
+    )
 
 
 def test_Poisson_dJdnu(poisson_problem):
@@ -200,6 +204,7 @@ def test_Poisson_dJdbc(poisson_problem):
     on all of Ω and not only on the part of ∂Ω where the boundary condition is applied. We
     extract those values and set everything else to zero.
     """
+    domain = poisson_problem["domain"]
     F = poisson_problem["F"]
     uh = poisson_problem["uh"]
     uD_control = poisson_problem["uD_control"]
@@ -241,9 +246,16 @@ def test_Poisson_dJdbc(poisson_problem):
     gradient_vector.scatter_reverse(la.InsertMode.add)
     gradient_vector.scatter_forward()
 
-    # Extract gradient values only at the boundary
-    gradient = np.zeros_like(gradient_vector.array)
-    gradient[control_dofs] = gradient_vector.array[control_dofs]
+    # Extract gradient values only at the boundary.
+    gradient_function = fem.Function(uD_control.function_space, gradient_vector)
+    boundary_gradient = fem.Function(uD_control.function_space)
+    fem.dirichletbc(gradient_function, control_dofs).set(boundary_gradient.x.array)
 
-    # Compare automatic differentiation result with explicit adjoint calculation
-    assert np.allclose(graph_.backprop(id(J), id(uD_control)), gradient)
+    # Compare automatic differentiation result with explicit adjoint calculation on the dofs owned by the calling rank.
+    assert domain.comm.allreduce(
+        np.allclose(
+            graph_.backprop(id(J), id(uD_control)).array,
+            boundary_gradient.x.petsc_vec.array,
+        ),
+        op=MPI.LAND,
+    )

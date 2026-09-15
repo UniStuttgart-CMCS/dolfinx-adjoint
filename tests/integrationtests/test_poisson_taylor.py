@@ -7,14 +7,8 @@ checking that the first-order Taylor remainder converges with rate two.
 """
 
 import numpy as np
-import pytest
 from dolfinx import fem
 from mpi4py import MPI
-
-pytestmark = pytest.mark.skipif(
-    MPI.COMM_WORLD.size > 1,
-    reason="Taylor tests are only run in serial.",
-)
 
 
 def _convergence_rates(errors: np.ndarray, steps: np.ndarray) -> list:
@@ -42,8 +36,7 @@ def test_Poisson_taylor_f(poisson_problem):
     df.interpolate(lambda x: x[0] + np.sin(x[1]))
 
     grad = graph_.backprop(id(J), id(f))
-    grad_array = grad.array if hasattr(grad, "array") else np.array(grad)
-    dJ = comm.allreduce(np.dot(grad_array, df.x.array), op=MPI.SUM)
+    dJ = grad.dot(df.x.petsc_vec)
 
     f_org = f.x.array.copy()
     step_length = 1e-2
@@ -81,7 +74,7 @@ def test_Poisson_taylor_nu(poisson_problem):
 
     direction = 1.0
     grad = graph_.backprop(id(J), id(nu))
-    dJ = comm.allreduce(float(grad) * direction, op=MPI.SUM)
+    dJ = float(grad) * direction
 
     nu_org = float(nu.value)
     step_length = 1e-2
@@ -130,7 +123,7 @@ def test_Poisson_taylor_bc(poisson_problem):
     direction.x.array[:] = 0.0
     direction.x.array[control_dofs] = smooth.x.array[control_dofs]
 
-    dJ = comm.allreduce(np.dot(grad_array, direction.x.array), op=MPI.SUM)
+    dJ = grad.dot(direction.x.petsc_vec)
 
     u_org = uD_control.x.array.copy()
     step_length = 1e-2

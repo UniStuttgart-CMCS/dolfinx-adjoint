@@ -364,6 +364,8 @@ def linear_elasticity_problem():
 @pytest.fixture(scope="module")
 def stokes_problem():
     """Set up the Stokes problem that will be used in all tests."""
+    gc.collect()
+
     # Mesh parameters
     gmsh.initialize()
     L = 2.2
@@ -441,8 +443,9 @@ def stokes_problem():
 
     v_elem = mixed_element([u_elem, p_elem])
     V = fem.functionspace(mesh, v_elem)
-    V_u, V_u_map = V.sub(0).collapse()
-    V_p, V_p_map = V.sub(1).collapse()
+
+    V_u, (V_u_map,) = V.sub(0).collapse()
+    V_p, (V_p_map,) = V.sub(1).collapse()
 
     up = fem.Function(V, name="up", graph=graph_)
     u, p = ufl.split(up)
@@ -490,8 +493,9 @@ def stokes_problem():
     # Parameters
     nu = fem.Constant(mesh, ScalarType(1.0), name="ν", graph=graph_)
     alpha = 10.0
+    beta = 1.0e-3
     f = fem.Function(V_u, name="f")
-    f.interpolate(lambda x: (0.0 * x[0], 0.0 + 0.0 * x[1]))
+    f.interpolate(lambda x: (0.0 * x[0], 0.0 * x[1]))
 
     # Variational formulation
     a = (
@@ -533,6 +537,7 @@ def stokes_problem():
     J_form = (
         0.5 * ufl.inner(ufl.grad(u), ufl.grad(u)) * ufl.dx
         + alpha / 2 * ufl.inner(g, g) * dObs
+        + beta / 2 * ufl.inner(p, p) * ufl.dx
     )
 
     J = fem.assemble_scalar(fem.form(J_form, graph=graph_), graph=graph_)

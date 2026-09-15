@@ -76,7 +76,8 @@ def test_Stokes_dJdnu(stokes_problem):
         },
     ).solve()
     gradient = ufl.action(ufl.adjoint(dFdnu), adjoint_solution) + dJdnu
-    gradient = fem.assemble_scalar(fem.form(gradient))
+
+    gradient = mesh.comm.allreduce(fem.assemble_scalar(fem.form(gradient)), op=MPI.SUM)
 
     assert np.allclose(graph_.backprop(id(J), id(nu)), gradient)
 

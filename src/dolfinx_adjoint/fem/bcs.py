@@ -4,7 +4,7 @@ from dolfinx import fem
 import dolfinx_adjoint.graph as graph
 
 
-def dirichletbc(*args, map=None, **kwargs):
+def dirichletbc(*args, **kwargs):
     """OVERLOADS: :py:func:`dolfinx.fem.dirichletbc`.
     Creates a representation of a Dirichlet boundary condition in
 
@@ -14,18 +14,9 @@ def dirichletbc(*args, map=None, **kwargs):
     Args:
         args: Arguments to :py:func:`dolfinx.fem.dirichletbc`.
         kwargs: Keyword arguments to :py:func:`dolfinx.fem.dirichletbc`.
-        map : Defines the map between the function space of the boundary
-            condition and the function space of the problem.
         graph: An additional keyword argument to specifier wheter the assemble
             operation should be added to the graph. If not present, the original functionality
             of dolfinx is used without any additional functionalities.
-
-    Note:
-        The map is used to define the map between the function space of the boundary
-        condition and the function space of the problem. This is useful when the function
-        space of the boundary condition and the function space of the problem are different.
-        The map is stored as an array where the index is equivalent to the index in the correct
-        space and the value is the index in the wrong space.
 
     """
     _graph = kwargs.pop("graph", None)
@@ -44,9 +35,12 @@ def dirichletbc(*args, map=None, **kwargs):
     # collapsed space, in which case the indices are the ones of the sub space.
     dofs, num_owned = output.dof_indices()
 
+    dofs_arg = args[1] if len(args) > 1 else kwargs["dofs"]
+    value_dofs = dofs_arg[1] if np.ndim(dofs_arg) == 2 else dofs
+
     value = args[0]
     template = value.x.petsc_vec if isinstance(value, fem.Function) else value.value
-    ctx = [dofs[:num_owned], map, template]
+    ctx = [dofs[:num_owned], value_dofs[:num_owned], template]
 
     # Creating the edge between the DirichletBC and the function defining the value of the BC
     value_node = _graph.get_node(id(args[0]))
@@ -78,16 +72,11 @@ class DirichletBC_Edge(graph.Edge):
 
         """
         # Extract variables from contextvariable ctx
-        dofs, map, template = self.ctx
+        dofs, value_dofs, template = self.ctx
 
         values = self.input_value.array_r
         gradient = template.duplicate()
         gradient.zeroEntries()
-
-        if map is None:
-            gradient.array_w[dofs] = values[dofs]
-        else:
-            value_dofs = np.flatnonzero(np.isin(map[: gradient.getLocalSize()], dofs))
-            gradient.array_w[value_dofs] = values[map[value_dofs]]
+        gradient.array_w[value_dofs] = values[dofs]
 
         return gradient

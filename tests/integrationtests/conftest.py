@@ -489,7 +489,7 @@ def stokes_problem():
 
     bcs = [
         fem.dirichletbc(h, dofs_inflow, V.sub(0)),
-        fem.dirichletbc(g, dofs_obstacle, V.sub(0), graph=graph_, map=V_u_map),
+        fem.dirichletbc(g, dofs_obstacle, V.sub(0), graph=graph_),
         fem.dirichletbc(noslip, dofs_walls, V.sub(0)),
         fem.dirichletbc(outflow, dofs_outflow, V.sub(1)),
     ]

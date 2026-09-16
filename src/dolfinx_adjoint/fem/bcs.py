@@ -1,7 +1,5 @@
 import numpy as np
-import scipy.sparse as sps
 from dolfinx import fem
-from petsc4py import PETSc
 
 import dolfinx_adjoint.graph as graph
 
@@ -44,8 +42,11 @@ def dirichletbc(*args, map=None, **kwargs):
     # to the boundary condition address blocks of components. They are a single
     # array also when the boundary condition couples a sub space with its
     # collapsed space, in which case the indices are the ones of the sub space.
-    dofs = output.dof_indices()[0]
-    ctx = [dofs, map]
+    dofs, num_owned = output.dof_indices()
+
+    value = args[0]
+    template = value.x.petsc_vec if isinstance(value, fem.Function) else value.value
+    ctx = [dofs[:num_owned], map, template]
 
     # Creating the edge between the DirichletBC and the function defining the value of the BC
     value_node = _graph.get_node(id(args[0]))
@@ -72,23 +73,21 @@ class DirichletBC_Edge(graph.Edge):
 
         Returns:
             (PETSc.Vec): The accumulated gradient up to this point in the computational graph.
+            It has the layout of the vector of the function defining the value of the boundary
+            condition, but only its entries owned by the calling rank are valid.
 
         """
         # Extract variables from contextvariable ctx
-        dofs, map = self.ctx
+        dofs, map, template = self.ctx
 
-        size = np.shape(self.input_value)[0]
-        matrix = sps.csr_matrix((np.ones(np.size(dofs)), (dofs, dofs)), (size, size))
+        values = self.input_value.array_r
+        gradient = template.duplicate()
+        gradient.zeroEntries()
 
-        # The map is used to define the map between the function space of the boundary
-        # condition and the function space of the problem. This is useful when the function
-        # space of the boundary condition and the function space of the problem are different.
-        # The map is stored as an array where the index is equivalent to the index in the correct
-        # space and the value is the index in the wrong space.
         if map is None:
-            output = self.input_value @ matrix
+            gradient.array_w[dofs] = values[dofs]
         else:
-            output = (self.input_value @ matrix)[map]
+            value_dofs = np.flatnonzero(np.isin(map[: gradient.getLocalSize()], dofs))
+            gradient.array_w[value_dofs] = values[map[value_dofs]]
 
-        # Convert to petsc vector
-        return PETSc.Vec().createWithArray(output)
+        return gradient

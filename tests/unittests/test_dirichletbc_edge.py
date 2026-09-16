@@ -14,10 +14,14 @@ from dolfinx_adjoint.node import AbstractNode
 
 def _restrict(input_value: PETSc.Vec, dofs, map=None) -> np.ndarray:
     """Run the restriction of a DirichletBC_Edge on the given input."""
+    # The layout of the gradient is the space of the value, which is the collapsed space
+    # when a map is given.
+    size = input_value.getLocalSize() if map is None else map.size
+    layout = la.vector(IndexMap(MPI.COMM_SELF, size), dtype=default_scalar_type)
     edge = DirichletBC_Edge(
         AbstractNode(object(), name="value"),
         AbstractNode(object(), name="bc"),
-        ctx=[dofs, map],
+        ctx=[dofs, map, layout.petsc_vec],
     )
     edge.input_value = input_value
     return edge.calculate_adjoint().array

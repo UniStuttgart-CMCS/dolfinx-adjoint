@@ -321,6 +321,8 @@ class Graph:
         Returns:
             float or PETSc.Vec: The gradient of the function with respect to the variable,
             if a variable is given. Otherwise the gradients are only stored in the nodes.
+            A PETSc.Vec gradient has the layout of the vector of the variable, including its
+            ghost entries, but only its entries owned by the calling rank are valid.
 
         Raises:
             ValueError: If the function or the variable is not part of the graph, or if

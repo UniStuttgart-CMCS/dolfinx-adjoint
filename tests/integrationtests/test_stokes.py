@@ -10,6 +10,7 @@ import numpy as np
 import ufl
 from dolfinx import fem, la
 from dolfinx.fem.petsc import LinearProblem
+from mpi4py import MPI
 
 
 def test_Stokes_dJdnu(stokes_problem):
@@ -71,11 +72,13 @@ def test_Stokes_dJdnu(stokes_problem):
         petsc_options={
             "ksp_type": "preonly",
             "pc_type": "lu",
+            "pc_factor_mat_solver_type": "mumps",
             "ksp_error_if_not_converged": True,
         },
     ).solve()
     gradient = ufl.action(ufl.adjoint(dFdnu), adjoint_solution) + dJdnu
-    gradient = fem.assemble_scalar(fem.form(gradient))
+
+    gradient = mesh.comm.allreduce(fem.assemble_scalar(fem.form(gradient)), op=MPI.SUM)
 
     assert np.allclose(graph_.backprop(id(J), id(nu)), gradient)
 
@@ -114,6 +117,7 @@ def test_Stokes_dJdg(stokes_problem):
     We extract only the boundary values by multiplying with an identity matrix
     nonzero on the boundary.
     """
+    mesh = stokes_problem["mesh"]
     V = stokes_problem["V"]
     V_u_map = stokes_problem["V_u_map"]
     up = stokes_problem["up"]
@@ -145,6 +149,7 @@ def test_Stokes_dJdg(stokes_problem):
         petsc_options={
             "ksp_type": "preonly",
             "pc_type": "lu",
+            "pc_factor_mat_solver_type": "mumps",
             "ksp_error_if_not_converged": True,
         },
     ).solve()
@@ -163,10 +168,14 @@ def test_Stokes_dJdg(stokes_problem):
     dJdup_vec.scatter_forward()
 
     # Extract obstacle boundary values and map to the collapsed velocity space.
-    boundary_gradient = np.zeros_like(gradient.array)
-    boundary_gradient[dofs_obstacle[0]] = (
+    boundary_gradient = fem.Function(V)
+    boundary_gradient.x.array[dofs_obstacle[0]] = (
         gradient.array[dofs_obstacle[0]] + dJdup_vec.array[dofs_obstacle[0]]
     )
-    gradient = boundary_gradient[V_u_map] + dJdg_vec.array
+    dJdg_vec.array[:] += boundary_gradient.x.array[V_u_map]
 
-    assert np.allclose(gradient, graph_.backprop(id(J), id(g)))
+    # Compare automatic differentiation result with explicit adjoint calculation on the dofs owned by the calling rank.
+    assert mesh.comm.allreduce(
+        np.allclose(graph_.backprop(id(J), id(g)).array, dJdg_vec.petsc_vec.array),
+        op=MPI.LAND,
+    )

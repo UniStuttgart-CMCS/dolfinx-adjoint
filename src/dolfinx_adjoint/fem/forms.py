@@ -2,6 +2,8 @@ from typing import Any
 
 import ufl
 from dolfinx import fem
+from mpi4py import MPI
+from petsc4py import PETSc
 
 import dolfinx_adjoint.graph as graph
 
@@ -118,12 +120,16 @@ class Form_Coefficient_Edge(graph.Edge):
 
         Returns:
             (PETSc.Vec): The accumulated gradient up to this point in the computational graph.
+            Only its entries owned by the calling rank are valid.
 
         """
         ufl_form, coefficient = self.ctx
         derivative = ufl.derivative(ufl_form, coefficient)
 
         output = fem.petsc.assemble_vector(fem.form(derivative))
+
+        output.ghostUpdate(addv=PETSc.InsertMode.ADD, mode=PETSc.ScatterMode.REVERSE)
+
         output.scale(self.input_value)
 
         return output
@@ -159,4 +165,6 @@ class Form_Constant_Edge(graph.Edge):
 
         derivative = ufl.derivative(replaced_form, function)
 
-        return self.input_value * fem.assemble_scalar(fem.form(derivative))
+        return self.input_value * domain.comm.allreduce(
+            fem.assemble_scalar(fem.form(derivative)), op=MPI.SUM
+        )

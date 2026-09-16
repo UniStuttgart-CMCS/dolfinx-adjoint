@@ -432,6 +432,8 @@ class NonlinearProblem_Coefficient_Edge(graph.Edge):
 
         Returns:
             (PETSc.Vec): The accumulated gradient up to this point in the computational graph.
+            It has the layout of the vector of the coefficient, but only its entries owned by the
+            calling rank are valid.
 
         """
         # Extract variables from contextvariable ctx
@@ -465,7 +467,10 @@ class NonlinearProblem_Coefficient_Edge(graph.Edge):
         dFdm.assemble()
 
         # Calculate λᵀ * ∂F/∂m
-        return dFdm.transpose() * adjoint_solution.x.petsc_vec
+        gradient = m.x.petsc_vec.duplicate()
+        dFdm.multTranspose(adjoint_solution.x.petsc_vec, gradient)
+
+        return gradient
 
 
 class NonlinearProblem_Constant_Edge(graph.Edge):
@@ -523,7 +528,8 @@ class NonlinearProblem_Constant_Edge(graph.Edge):
         dFdm = fem.petsc.assemble_vector(
             fem.form(ufl.derivative(replaced_form, function))
         )
-        dFdm.assemble()
+
+        dFdm.ghostUpdate(addv=PETSc.InsertMode.ADD, mode=PETSc.ScatterMode.REVERSE)
 
         # Calculate λᵀ * ∂F/∂m
         return adjoint_solution.x.petsc_vec.dot(dFdm)
@@ -557,6 +563,7 @@ class NonlinearProblem_Boundary_Edge(graph.Edge):
 
         Returns:
             (PETSc.Vec): The accumulated gradient up to this point in the computational graph.
+            Only its entries owned by the calling rank are valid.
 
         """
 

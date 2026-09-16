@@ -10,6 +10,7 @@ import numpy as np
 import ufl
 from dolfinx import fem, la
 from dolfinx.fem.petsc import LinearProblem
+from mpi4py import MPI
 from petsc4py.PETSc import ScalarType
 
 
@@ -37,6 +38,8 @@ def test_Poisson_dJdf(poisson_problem):
     and then compute the gradient of J(u) with respect to f using (1.3).
         dJ/df = λᵀ * ∂F/∂f + ∂J/∂f                                  (1.5)
     """
+
+    domain = poisson_problem["domain"]
     F = poisson_problem["F"]
     uh = poisson_problem["uh"]
     f = poisson_problem["f"]
@@ -65,6 +68,7 @@ def test_Poisson_dJdf(poisson_problem):
         petsc_options={
             "ksp_type": "preonly",
             "pc_type": "lu",
+            "pc_factor_mat_solver_type": "mumps",
             "ksp_error_if_not_converged": True,
         },
     ).solve()
@@ -74,8 +78,11 @@ def test_Poisson_dJdf(poisson_problem):
     gradient_df.scatter_reverse(la.InsertMode.add)
     gradient_df.scatter_forward()
 
-    # Compare automatic differentiation result with explicit adjoint calculation
-    assert np.allclose(graph_.backprop(id(J), id(f)), gradient_df.array[:])
+    # Compare automatic differentiation result with explicit adjoint calculation on the dofs owned by the calling rank.
+    assert domain.comm.allreduce(
+        np.allclose(graph_.backprop(id(J), id(f)).array, gradient_df.petsc_vec.array),
+        op=MPI.LAND,
+    )
 
 
 def test_Poisson_dJdnu(poisson_problem):
@@ -138,11 +145,15 @@ def test_Poisson_dJdnu(poisson_problem):
         petsc_options={
             "ksp_type": "preonly",
             "pc_type": "lu",
+            "pc_factor_mat_solver_type": "mumps",
             "ksp_error_if_not_converged": True,
         },
     ).solve()
     gradient = ufl.action(ufl.adjoint(dFdnu), adjoint_solution) + dJdnu
-    gradient = fem.assemble_scalar(fem.form(gradient))
+
+    gradient = domain.comm.allreduce(
+        fem.assemble_scalar(fem.form(gradient)), op=MPI.SUM
+    )
 
     # Compare automatic differentiation result with explicit adjoint calculation
     assert np.allclose(graph_.backprop(id(J), id(nu)), gradient)
@@ -193,6 +204,7 @@ def test_Poisson_dJdbc(poisson_problem):
     on all of Ω and not only on the part of ∂Ω where the boundary condition is applied. We
     extract those values and set everything else to zero.
     """
+    domain = poisson_problem["domain"]
     F = poisson_problem["F"]
     uh = poisson_problem["uh"]
     uD_control = poisson_problem["uD_control"]
@@ -221,27 +233,29 @@ def test_Poisson_dJdbc(poisson_problem):
         petsc_options={
             "ksp_type": "preonly",
             "pc_type": "lu",
+            "pc_factor_mat_solver_type": "mumps",
             "ksp_error_if_not_converged": True,
         },
     ).solve()
-    gradient = ufl.action(ufl.adjoint(dFdbc), adjoint_solution)
+    # The two contributions of (3.5): the lifting term λᵀ ∂F/∂u_D, and the direct term
+    # ∂J/∂u_D, which is nonzero because u = u_D holds exactly on the constrained dofs,
+    # so a perturbation of u_D moves the solution there one-to-one.
+    gradient_form = ufl.action(ufl.adjoint(dFdbc), adjoint_solution) + dJdu
 
-    gradient = fem.assemble_vector(fem.form(gradient))
-    gradient.scatter_reverse(la.InsertMode.add)
-    gradient.scatter_forward()
+    gradient_vector = fem.assemble_vector(fem.form(gradient_form))
+    gradient_vector.scatter_reverse(la.InsertMode.add)
+    gradient_vector.scatter_forward()
 
-    # Direct contribution ∂J/∂u_D of (3.5): since u = u_D holds exactly on the constrained
-    # dofs, a perturbation of u_D moves the solution there one-to-one.
-    dJdu_vec = fem.assemble_vector(fem.form(dJdu))
-    dJdu_vec.scatter_reverse(la.InsertMode.add)
-    dJdu_vec.scatter_forward()
+    # Extract gradient values only at the boundary.
+    gradient_function = fem.Function(uD_control.function_space, gradient_vector)
+    boundary_gradient = fem.Function(uD_control.function_space)
+    fem.dirichletbc(gradient_function, control_dofs).set(boundary_gradient.x.array)
 
-    # Extract gradient values only at the boundary
-    matrix = np.zeros((len(gradient.array), len(gradient.array)))
-    for index in control_dofs:
-        matrix[index, index] = 1.0
-
-    gradient = matrix @ (gradient.array + dJdu_vec.array)
-
-    # Compare automatic differentiation result with explicit adjoint calculation
-    assert np.allclose(graph_.backprop(id(J), id(uD_control)), gradient)
+    # Compare automatic differentiation result with explicit adjoint calculation on the dofs owned by the calling rank.
+    assert domain.comm.allreduce(
+        np.allclose(
+            graph_.backprop(id(J), id(uD_control)).array,
+            boundary_gradient.x.petsc_vec.array,
+        ),
+        op=MPI.LAND,
+    )

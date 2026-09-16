@@ -1,12 +1,10 @@
 import numpy as np
-import scipy.sparse as sps
 from dolfinx import fem
-from petsc4py import PETSc
 
 import dolfinx_adjoint.graph as graph
 
 
-def dirichletbc(*args, map=None, **kwargs):
+def dirichletbc(*args, **kwargs):
     """OVERLOADS: :py:func:`dolfinx.fem.dirichletbc`.
     Creates a representation of a Dirichlet boundary condition in
 
@@ -16,18 +14,9 @@ def dirichletbc(*args, map=None, **kwargs):
     Args:
         args: Arguments to :py:func:`dolfinx.fem.dirichletbc`.
         kwargs: Keyword arguments to :py:func:`dolfinx.fem.dirichletbc`.
-        map : Defines the map between the function space of the boundary
-            condition and the function space of the problem.
         graph: An additional keyword argument to specifier wheter the assemble
             operation should be added to the graph. If not present, the original functionality
             of dolfinx is used without any additional functionalities.
-
-    Note:
-        The map is used to define the map between the function space of the boundary
-        condition and the function space of the problem. This is useful when the function
-        space of the boundary condition and the function space of the problem are different.
-        The map is stored as an array where the index is equivalent to the index in the correct
-        space and the value is the index in the wrong space.
 
     """
     _graph = kwargs.pop("graph", None)
@@ -44,8 +33,14 @@ def dirichletbc(*args, map=None, **kwargs):
     # to the boundary condition address blocks of components. They are a single
     # array also when the boundary condition couples a sub space with its
     # collapsed space, in which case the indices are the ones of the sub space.
-    dofs = output.dof_indices()[0]
-    ctx = [dofs, map]
+    dofs, num_owned = output.dof_indices()
+
+    dofs_arg = args[1] if len(args) > 1 else kwargs["dofs"]
+    value_dofs = dofs_arg[1] if np.ndim(dofs_arg) == 2 else dofs
+
+    value = args[0]
+    template = value.x.petsc_vec if isinstance(value, fem.Function) else value.value
+    ctx = [dofs[:num_owned], value_dofs[:num_owned], template]
 
     # Creating the edge between the DirichletBC and the function defining the value of the BC
     value_node = _graph.get_node(id(args[0]))
@@ -72,23 +67,16 @@ class DirichletBC_Edge(graph.Edge):
 
         Returns:
             (PETSc.Vec): The accumulated gradient up to this point in the computational graph.
+            It has the layout of the vector of the function defining the value of the boundary
+            condition, but only its entries owned by the calling rank are valid.
 
         """
         # Extract variables from contextvariable ctx
-        dofs, map = self.ctx
+        dofs, value_dofs, template = self.ctx
 
-        size = np.shape(self.input_value)[0]
-        matrix = sps.csr_matrix((np.ones(np.size(dofs)), (dofs, dofs)), (size, size))
+        values = self.input_value.array_r
+        gradient = template.duplicate()
+        gradient.zeroEntries()
+        gradient.array_w[value_dofs] = values[dofs]
 
-        # The map is used to define the map between the function space of the boundary
-        # condition and the function space of the problem. This is useful when the function
-        # space of the boundary condition and the function space of the problem are different.
-        # The map is stored as an array where the index is equivalent to the index in the correct
-        # space and the value is the index in the wrong space.
-        if map is None:
-            output = self.input_value @ matrix
-        else:
-            output = (self.input_value @ matrix)[map]
-
-        # Convert to petsc vector
-        return PETSc.Vec().createWithArray(output)
+        return gradient

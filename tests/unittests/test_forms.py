@@ -2,12 +2,15 @@
 
 import numpy as np
 import ufl
+from dolfinx import mesh
 from petsc4py.PETSc import ScalarType
 
 from dolfinx_adjoint import Graph, fem
 
 
-def test_form_constant_edge_gradient_without_coefficient(unit_square_mesh):
+def test_form_constant_edge_gradient_without_coefficient(
+    unit_square_mesh: mesh.Mesh,
+) -> None:
     """A constant-only form must not reference an undefined coefficient.
 
     The exact gradient also catches invalid mesh access and scalar assembly
@@ -27,7 +30,9 @@ def test_form_constant_edge_gradient_without_coefficient(unit_square_mesh):
     assert np.isclose(gradient, seed * 3.0)
 
 
-def test_form_constant_edge_gradient_with_coefficient(unit_square_mesh):
+def test_form_constant_edge_gradient_with_coefficient(
+    unit_square_mesh: mesh.Mesh,
+) -> None:
     """The constant edge must capture c rather than the form's coefficient."""
     domain = unit_square_mesh
     graph_ = Graph()

@@ -2,12 +2,15 @@
 
 import numpy as np
 import ufl
+from dolfinx import mesh
 from petsc4py.PETSc import ScalarType
 
 from dolfinx_adjoint import Graph, fem
 
 
-def test_form_constant_edge_gradient_without_coefficient(unit_square_mesh):
+def test_form_constant_edge_gradient_without_coefficient(
+    unit_square_mesh: mesh.Mesh,
+) -> None:
     """A constant-only form must not reference an undefined coefficient.
 
     The exact gradient also catches invalid mesh access and scalar assembly
@@ -27,7 +30,9 @@ def test_form_constant_edge_gradient_without_coefficient(unit_square_mesh):
     assert np.isclose(gradient, seed * 3.0)
 
 
-def test_form_constant_edge_gradient_with_coefficient(unit_square_mesh):
+def test_form_constant_edge_gradient_with_coefficient(
+    unit_square_mesh: mesh.Mesh,
+) -> None:
     """The constant edge must capture c rather than the form's coefficient."""
     domain = unit_square_mesh
     graph_ = Graph()
@@ -46,3 +51,21 @@ def test_form_constant_edge_gradient_with_coefficient(unit_square_mesh):
     # Integral of 1 + x over the unit square is 1.5, so dJ/dc = 2 * 1.5 = 3.
     # Differentiating w.r.t. weight in direction 1 would give 0.5 * 2**2 = 2.
     assert np.isclose(gradient, seed * 3.0)
+
+
+def test_form_constant_gradient_is_taken_at_the_current_value(
+    unit_square_mesh: mesh.Mesh,
+) -> None:
+    """The form edge differentiates at the value of c, not its constructor argument."""
+    domain = unit_square_mesh
+    graph_ = Graph()
+    c = fem.Constant(domain, ScalarType(1.0), graph=graph_)
+    c.value = 2.0
+
+    J_form = 0.5 * c**2 * ufl.dx(domain=domain)
+    J = fem.assemble_scalar(fem.form(J_form, graph=graph_), graph=graph_)
+
+    gradient = graph_.backprop(id(J), id(c))
+
+    # The unit square has area 1, so dJ/dc = c is 2; the constructor argument gives 1.
+    assert np.isclose(gradient, 2.0)

@@ -53,7 +53,7 @@ def test_restriction_with_two_controlled_dofs():
 
 
 @pytest.fixture(params=[0, 1], ids=["vector sub space", "scalar sub space"])
-def collapsed_condition(request, unit_square_mesh):
+def collapsed_condition(request, unit_square_mesh: mesh.Mesh):
     """A tracked Dirichlet condition on a sub space of a mixed space, with its value on
     the collapsed sub space.
 

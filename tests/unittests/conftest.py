@@ -6,6 +6,6 @@ from mpi4py import MPI
 
 
 @pytest.fixture(scope="module")
-def unit_square_mesh():
+def unit_square_mesh() -> mesh.Mesh:
     """Create one unit-square mesh on COMM_SELF per test module."""
     return mesh.create_unit_square(MPI.COMM_SELF, 4, 4)

@@ -159,7 +159,7 @@ class Form_Constant_Edge(graph.Edge):
         domain = constant.domain
         DG0 = fem.functionspace(domain, ("DG", 0))
         function = fem.Function(DG0)
-        function.x.array[:] = constant.c
+        function.x.array[:] = constant.value
 
         replaced_form = ufl.replace(ufl_form, {constant: function})
 

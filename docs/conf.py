@@ -12,9 +12,15 @@ copyright = f"{datetime.now().year}, {author}"
 
 extensions = [
     "sphinx.ext.autodoc",
+    "sphinx.ext.intersphinx",
     "sphinx.ext.napoleon",
     "sphinx_design",
 ]
+
+# Resolve references to DOLFINx, matching the version used in CI.
+intersphinx_mapping = {
+    "dolfinx": ("https://docs.fenicsproject.org/dolfinx/v0.11.0/python/", None),
+}
 
 templates_path = ["_templates"]
 exclude_patterns = ["_build", "Thumbs.db", ".DS_Store"]

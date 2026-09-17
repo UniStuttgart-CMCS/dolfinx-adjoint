@@ -17,8 +17,8 @@ def form(*args, **kwargs):
     in the computational graph and the adjoint equations. The original functionality is kept.
 
     Args:
-        args: Arguments to :py:func:`dolfinx.fem.assemble_scalar`.
-        kwargs: Keyword arguments to :py:func:`dolfinx.fem.assemble_scalar`.
+        args: Arguments to :py:func:`dolfinx.fem.form`.
+        kwargs: Keyword arguments to :py:func:`dolfinx.fem.form`.
         graph (graph, optional): An additional keyword argument to specifier whether the assemble
             operation should be added to the graph. If not present, the original functionality
             of dolfinx is used without any additional functionalities.

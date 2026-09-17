@@ -523,7 +523,7 @@ class NonlinearProblem_Constant_Edge(graph.Edge):
         domain = m.domain
         DG0 = fem.functionspace(domain, ("DG", 0))
         function = fem.Function(DG0)
-        function.x.array[:] = m.c
+        function.x.array[:] = m.value
         replaced_form = ufl.replace(F, {m: function})
         dFdm = fem.petsc.assemble_vector(
             fem.form(ufl.derivative(replaced_form, function))

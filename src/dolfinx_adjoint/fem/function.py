@@ -139,4 +139,3 @@ class Constant(fem.Constant):
         Constant_node = graph.Node(self, name=name)
         _graph.add_node(Constant_node)
         self.domain = args[0]
-        self.c = args[1]

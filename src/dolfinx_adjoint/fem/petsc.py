@@ -8,6 +8,7 @@ from dolfinx.fem.petsc import assign, set_bc
 from petsc4py import PETSc
 
 import dolfinx_adjoint.graph as graph
+from dolfinx_adjoint.utils import bind_arguments
 
 
 class LinearProblem(LinearProblemBase):
@@ -47,8 +48,10 @@ class LinearProblem(LinearProblemBase):
         if adjoint_petsc_options_prefix is None:
             adjoint_petsc_options_prefix = kwargs["petsc_options_prefix"] + "adjoint_"
 
-        a = args[0]
-        L = args[1]
+        arguments = bind_arguments(LinearProblemBase.__init__, self, *args, **kwargs)
+        del arguments["self"]
+        a = arguments.pop("a")
+        L = arguments.pop("L")
         F_form = a - L
 
         u = kwargs.get("u")
@@ -63,7 +66,7 @@ class LinearProblem(LinearProblemBase):
             L,
             adjoint_petsc_options=adjoint_petsc_options,
             adjoint_petsc_options_prefix=adjoint_petsc_options_prefix,
-            **kwargs,
+            **arguments,
         )
         _graph.add_node(problem_node)
 
@@ -188,8 +191,12 @@ class NonlinearProblem(NonlinearProblemBase):
         if adjoint_petsc_options_prefix is None:
             adjoint_petsc_options_prefix = kwargs["petsc_options_prefix"] + "adjoint_"
 
-        F_form = args[0]
-        u = args[1]
+        arguments = bind_arguments(
+            NonlinearProblemBase.__init__, self, *args, **kwargs
+        )
+        del arguments["self"]
+        F_form = arguments.pop("F")
+        u = arguments.pop("u")
 
         problem_node = NonlinearProblemNode(
             self,
@@ -197,7 +204,7 @@ class NonlinearProblem(NonlinearProblemBase):
             u,
             adjoint_petsc_options=adjoint_petsc_options,
             adjoint_petsc_options_prefix=adjoint_petsc_options_prefix,
-            **kwargs,
+            **arguments,
         )
         _graph.add_node(problem_node)
 
@@ -324,7 +331,7 @@ class LinearProblemNode(graph.AbstractNode):
         The initialization of the LinearProblem object.
 
         """
-        output = LinearProblemBase(self.a, self.L, **self.kwargs)
+        output = LinearProblemBase(a=self.a, L=self.L, **self.kwargs)
         self.object = output
         return output
 
@@ -372,7 +379,7 @@ class NonlinearProblemNode(graph.AbstractNode):
         The initialization of the NonlinearProblem object.
 
         """
-        output = NonlinearProblemBase(self.F, self.u, **self.kwargs)
+        output = NonlinearProblemBase(F=self.F, u=self.u, **self.kwargs)
         self.object = output
         return output
 

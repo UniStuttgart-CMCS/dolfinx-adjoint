@@ -2,6 +2,7 @@ import numpy as np
 from dolfinx import fem
 
 import dolfinx_adjoint.graph as graph
+from dolfinx_adjoint.utils import bind_arguments
 
 
 def dirichletbc(*args, **kwargs):
@@ -35,15 +36,15 @@ def dirichletbc(*args, **kwargs):
     # collapsed space, in which case the indices are the ones of the sub space.
     dofs, num_owned = output.dof_indices()
 
-    dofs_arg = args[1] if len(args) > 1 else kwargs["dofs"]
-    value_dofs = dofs_arg[1] if np.ndim(dofs_arg) == 2 else dofs
+    arguments = bind_arguments(fem.dirichletbc, *args, **kwargs)
+    value_dofs = arguments["dofs"][1] if np.ndim(arguments["dofs"]) == 2 else dofs
 
-    value = args[0]
+    value = arguments["value"]
     template = value.x.petsc_vec if isinstance(value, fem.Function) else value.value
     ctx = [dofs[:num_owned], value_dofs[:num_owned], template]
 
     # Creating the edge between the DirichletBC and the function defining the value of the BC
-    value_node = _graph.get_node(id(args[0]))
+    value_node = _graph.get_node(id(value))
     dirichletbc_edge = DirichletBC_Edge(value_node, dirichletbc_node, ctx=ctx)
     dirichletbc_edge.set_next_functions(value_node.get_gradFuncs())
     dirichletbc_node.set_gradFuncs([dirichletbc_edge])

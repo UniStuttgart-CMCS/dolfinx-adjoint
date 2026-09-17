@@ -6,6 +6,7 @@ from mpi4py import MPI
 from petsc4py import PETSc
 
 import dolfinx_adjoint.graph as graph
+from dolfinx_adjoint.utils import bind_arguments
 
 
 def form(*args, **kwargs):
@@ -36,11 +37,11 @@ def form(*args, **kwargs):
     if _graph is None:
         return output
 
-    # Creating and adding node to graph
-    form_node = FormNode(output, args[0])
-    _graph.add_node(form_node)
+    ufl_form = bind_arguments(fem.form, *args, **kwargs)["form"]
 
-    ufl_form = args[0]
+    # Creating and adding node to graph
+    form_node = FormNode(output, ufl_form)
+    _graph.add_node(form_node)
 
     # Creating and adding edges to the graph if the coefficients are in the graph
     for coefficient in ufl_form.coefficients():

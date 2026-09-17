@@ -1,6 +1,7 @@
 from dolfinx import fem, la
 
 import dolfinx_adjoint.graph as graph
+from dolfinx_adjoint.utils import bind_arguments
 
 
 class Function(fem.Function):
@@ -34,8 +35,6 @@ class Function(fem.Function):
         """
         _graph = kwargs.pop("graph", None)
         map = kwargs.pop("map", None)
-        if not "name" in kwargs:
-            kwargs["name"] = "f"
 
         super().__init__(*args, **kwargs)
         if _graph is None:
@@ -138,4 +137,5 @@ class Constant(fem.Constant):
 
         Constant_node = graph.Node(self, name=name)
         _graph.add_node(Constant_node)
-        self.domain = args[0]
+        arguments = bind_arguments(fem.Constant.__init__, self, *args, **kwargs)
+        self.domain = arguments["domain"]

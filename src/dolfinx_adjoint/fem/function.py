@@ -5,7 +5,7 @@ from dolfinx_adjoint.utils import bind_arguments
 
 
 class Function(fem.Function):
-    """OVERLOADS: :py:class:`dolfinx.fem.function.Function`
+    """OVERLOADS: :py:class:`dolfinx.fem.Function`
     Initialize a finite element Function.
 
     The overloaded class modifies the initialization of the Function to keep track of the dependencies
@@ -17,12 +17,12 @@ class Function(fem.Function):
     """
 
     def __init__(self, *args, **kwargs):
-        """OVERLOADS: :py:func:`dolfinx.fem.function.Function.__init__`
+        """OVERLOADS: :py:class:`dolfinx.fem.Function`
         Initialize a finite element Function.
 
         Args:
-            args: Arguments to :py:func:`dolfinx.fem.function.Function.__init__`
-            kwargs: Keyword arguments to :py:func:`dolfinx.fem.function.Function.__init__`
+            args: Arguments to :py:class:`dolfinx.fem.Function`
+            kwargs: Keyword arguments to :py:class:`dolfinx.fem.Function`
             graph (graph, optional): An additional keyword argument to specifier whether the assemble
                 operation should be added to the graph. If not present, the original functionality
                 of dolfinx is used without any additional functionalities.
@@ -107,7 +107,7 @@ class Function(fem.Function):
 
 
 class Constant(fem.Constant):
-    """OVERLOADS: :py:class:`dolfinx.fem.constant.Constant`
+    """OVERLOADS: :py:class:`dolfinx.fem.Constant`
     Initialize a constant function.
 
     The overloaded class modifies the initialization of the Constant to keep track of the dependencies
@@ -116,12 +116,12 @@ class Constant(fem.Constant):
     """
 
     def __init__(self, *args, **kwargs):
-        """OVERLOADS: :py:func:`dolfinx.fem.constant.Constant.__init__`
+        """OVERLOADS: :py:class:`dolfinx.fem.Constant`
         Initialize a constant function.
 
         Args:
-            args: Arguments to :py:func:`dolfinx.fem.constant.Constant.__init__`
-            kwargs: Keyword arguments to :py:func:`dolfinx.fem.constant.Constant.__init__`
+            args: Arguments to :py:class:`dolfinx.fem.Constant`
+            kwargs: Keyword arguments to :py:class:`dolfinx.fem.Constant`
             graph (graph, optional): An additional keyword argument to specifier whether the assemble
                 operation should be added to the graph. If not present, the original functionality
                 of dolfinx is used without any additional functionalities.

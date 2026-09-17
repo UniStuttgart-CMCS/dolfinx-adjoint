@@ -21,12 +21,12 @@ class LinearProblem(LinearProblemBase):
     """
 
     def __init__(self, *args, **kwargs):
-        """OVERLOADS: :py:func:`dolfinx.fem.petsc.LinearProblem.__init__`.
+        """OVERLOADS: :py:class:`dolfinx.fem.petsc.LinearProblem`.
         Initialize solver for solving a linear problem
 
         Args:
-            args: Arguments to :py:func:`dolfinx.fem.petsc.LinearProblem.__init__`.
-            kwargs: Keyword arguments to :py:func:`dolfinx.fem.petsc.LinearProblem.__init__`.
+            args: Arguments to :py:class:`dolfinx.fem.petsc.LinearProblem`.
+            kwargs: Keyword arguments to :py:class:`dolfinx.fem.petsc.LinearProblem`.
             graph: An additional keyword argument to specifier whether the assemble
                 operation should be added to the graph. If not present, the original functionality
                 of dolfinx is used without any additional functionalities.
@@ -117,12 +117,12 @@ class LinearProblem(LinearProblemBase):
                     bc_edge.set_next_functions(bc_node.get_gradFuncs())
 
     def solve(self, *args, **kwargs):
-        """OVERLOADS: :py:func:`dolfinx.fem.petsc.LinearProblem.solve`
+        """OVERLOADS: :py:meth:`dolfinx.fem.petsc.LinearProblem.solve`
         Solve linear problem into function u. Returns the number of iterations and if the solver converged.
 
         Args:
-            args: Arguments to :py:func:`dolfinx.fem.petsc.LinearProblem.solve`
-            kwargs: Keyword arguments to :py:func:`dolfinx.fem.petsc.LinearProblem.solve`
+            args: Arguments to :py:meth:`dolfinx.fem.petsc.LinearProblem.solve`
+            kwargs: Keyword arguments to :py:meth:`dolfinx.fem.petsc.LinearProblem.solve`
             graph (graph, optional): An additional keyword argument to specifier whether the assemble
                 operation should be added to the graph. If not present, the original functionality
                 of dolfinx is used without any additional functionalities.
@@ -163,12 +163,12 @@ class NonlinearProblem(NonlinearProblemBase):
     """
 
     def __init__(self, *args, **kwargs):
-        """OVERLOADS: :py:func:`dolfinx.fem.petsc.NonlinearProblem.__init__`.
+        """OVERLOADS: :py:class:`dolfinx.fem.petsc.NonlinearProblem`.
         Initialize solver for solving a non-linear problem using Newton's method
 
         Args:
-            args: Arguments to :py:func:`dolfinx.fem.petsc.NonlinearProblem.__init__`.
-            kwargs: Keyword arguments to :py:func:`dolfinx.fem.petsc.NonlinearProblem.__init__`.
+            args: Arguments to :py:class:`dolfinx.fem.petsc.NonlinearProblem`.
+            kwargs: Keyword arguments to :py:class:`dolfinx.fem.petsc.NonlinearProblem`.
             graph: An additional keyword argument to specifier whether the assemble
                 operation should be added to the graph. If not present, the original functionality
                 of dolfinx is used without any additional functionalities.
@@ -250,12 +250,12 @@ class NonlinearProblem(NonlinearProblemBase):
                     bc_edge.set_next_functions(bc_node.get_gradFuncs())
 
     def solve(self, *args, **kwargs):
-        """OVERLOADS: :py:func:`dolfinx.fem.petsc.NonlinearProblem.solve`
+        """OVERLOADS: :py:meth:`dolfinx.fem.petsc.NonlinearProblem.solve`
         Solve non-linear problem into function u. Returns the number of iterations and if the solver converged.
 
         Args:
-            args: Arguments to :py:func:`dolfinx.fem.petsc.NonlinearProblem.solve`
-            kwargs: Keyword arguments to :py:func:`dolfinx.fem.petsc.NonlinearProblem.solve`
+            args: Arguments to :py:meth:`dolfinx.fem.petsc.NonlinearProblem.solve`
+            kwargs: Keyword arguments to :py:meth:`dolfinx.fem.petsc.NonlinearProblem.solve`
             graph (graph, optional): An additional keyword argument to specifier whether the assemble
                 operation should be added to the graph. If not present, the original functionality
                 of dolfinx is used without any additional functionalities.

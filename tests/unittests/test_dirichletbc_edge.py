@@ -53,7 +53,7 @@ def test_restriction_with_two_controlled_dofs():
 
 
 @pytest.fixture(params=[0, 1], ids=["vector sub space", "scalar sub space"])
-def collapsed_condition(request):
+def collapsed_condition(request, unit_square_mesh):
     """A tracked Dirichlet condition on a sub space of a mixed space, with its value on
     the collapsed sub space.
 
@@ -61,7 +61,7 @@ def collapsed_condition(request):
     space by extracting it, so both parameters cover a different ownership of the dofs.
     """
     graph_ = Graph()
-    domain = mesh.create_unit_square(MPI.COMM_WORLD, 4, 4)
+    domain = unit_square_mesh
     u_elem = element("Lagrange", domain.basix_cell(), 2, shape=(2,))
     p_elem = element("Lagrange", domain.basix_cell(), 1)
     V = fem.functionspace(domain, mixed_element([u_elem, p_elem]))

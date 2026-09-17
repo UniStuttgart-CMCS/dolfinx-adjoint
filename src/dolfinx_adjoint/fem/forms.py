@@ -58,11 +58,11 @@ def form(*args, **kwargs):
     for constant in ufl_form.constants():
         constant_node = _graph.get_node(id(constant))
         if not constant_node == None:
-            ctx = [ufl_form, coefficient]
-            coefficient_edge = Form_Constant_Edge(constant_node, form_node, ctx=ctx)
-            form_node.append_gradFuncs(coefficient_edge)
-            coefficient_edge.set_next_functions(constant_node.get_gradFuncs())
-            _graph.add_edge(coefficient_edge)
+            ctx = [ufl_form, constant]
+            constant_edge = Form_Constant_Edge(constant_node, form_node, ctx=ctx)
+            form_node.append_gradFuncs(constant_edge)
+            constant_edge.set_next_functions(constant_node.get_gradFuncs())
+            _graph.add_edge(constant_edge)
 
     return output
 
@@ -137,33 +137,33 @@ class Form_Coefficient_Edge(graph.Edge):
 
 class Form_Constant_Edge(graph.Edge):
     """
-    Edge providing the adjoint equation for the derivative of the form with respect to a constant.
-
+    Edge providing the adjoint equation for the derivative of the form with respect to a scalar constant.
     """
 
     def calculate_adjoint(self):
         """
-        The method provides the adjoint equation for the derivative of the form with respect to a constant.
+        The method provides the adjoint equation for the derivative of the form with respect to a scalar constant.
 
         Since the symbolic equations are available in the ufl form, the derivative can be calculated using the symbolic
         differentiation provided by UFL. However, the constant needs to be replaced by a function in order to use the
-        UFL functionality.
+        UFL functionality. A uniform unit direction varies the scalar parameter everywhere and leaves no test argument, so the derivative can be assembled as a scalar.
 
         Returns:
-            (PETSc.Vec): The accumulated gradient up to this point in the computational graph.
+            float or complex: The accumulated gradient up to this point in the computational graph.
 
         """
+
         ufl_form, constant = self.ctx
 
         # Create a function based on the constant in order to use ufl.derivative
         domain = constant.domain
-        DG0 = fem.functionspace(domain.mesh, ("DG", 0))
+        DG0 = fem.functionspace(domain, ("DG", 0))
         function = fem.Function(DG0)
         function.x.array[:] = constant.c
 
         replaced_form = ufl.replace(ufl_form, {constant: function})
 
-        derivative = ufl.derivative(replaced_form, function)
+        derivative = ufl.derivative(replaced_form, function, ufl.as_ufl(1.0))
 
         return self.input_value * domain.comm.allreduce(
             fem.assemble_scalar(fem.form(derivative)), op=MPI.SUM

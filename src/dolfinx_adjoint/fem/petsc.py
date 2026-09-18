@@ -191,9 +191,7 @@ class NonlinearProblem(NonlinearProblemBase):
         if adjoint_petsc_options_prefix is None:
             adjoint_petsc_options_prefix = kwargs["petsc_options_prefix"] + "adjoint_"
 
-        arguments = bind_arguments(
-            NonlinearProblemBase.__init__, self, *args, **kwargs
-        )
+        arguments = bind_arguments(NonlinearProblemBase.__init__, self, *args, **kwargs)
         del arguments["self"]
         F_form = arguments.pop("F")
         u = arguments.pop("u")
@@ -566,7 +564,7 @@ class NonlinearProblem_Boundary_Edge(graph.Edge):
         homogenises its right-hand side on the constrained dofs Γ. The term x accounts for the
         constrained dofs themselves, where u_Γ = g holds exactly. The full vector x is added, as
         the restriction to the controlled dofs is applied by
-        :py:class:`dolfinx_adjoint.fem.bcs.DirichletBC_Edge`.
+        :py:class:`dolfinx_adjoint.fem.bcs.DirichletBC_Function_Edge`.
 
         Returns:
             (PETSc.Vec): The accumulated gradient up to this point in the computational graph.

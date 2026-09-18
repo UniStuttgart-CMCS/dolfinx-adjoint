@@ -231,8 +231,6 @@ class Graph:
             return self._nx_graph
 
     def visualise(self, filename="graph.pdf", style="planar", print_edge_labels=True):
-        import matplotlib.pyplot as plt
-
         """Visualise the graph
 
         Args:
@@ -241,6 +239,8 @@ class Graph:
             print_edge_labels (bool, optional): Whether to print the edge labels. Defaults to True.
 
         """
+        import matplotlib.pyplot as plt
+
         plt.figure(figsize=(10, 8))
         nx_graph = self.to_networkx()
         labels = nx.get_node_attributes(nx_graph, "name")

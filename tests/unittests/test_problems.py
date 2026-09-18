@@ -1,9 +1,11 @@
 """Unit tests for graph-tracked problems and their derivatives."""
 
 import numpy as np
+import pytest
 import ufl
 from dolfinx import mesh
 from dolfinx.fem.petsc import assemble_vector
+from mpi4py import MPI
 from petsc4py import PETSc
 from petsc4py.PETSc import ScalarType
 
@@ -88,3 +90,56 @@ def test_nonlinear_problem_constant_edge_gradient(
     # u = c^(1/3), J = integral((1 + x) u) = 3u/2 on the unit square.
     # Thus dJ/dc = (3/2)/(3u^2) = 1/8 at c = 8, on every rank.
     assert np.isclose(gradient, 0.125)
+
+
+@pytest.mark.parametrize("measure_name", ["dx", "ds", "dS"])
+def test_problem_constant_gradient_on_measures(
+    unit_square_mesh_per_comm: mesh.Mesh, measure_name: str
+) -> None:
+    """Catch an unrestricted DG0 replacement in the residual's dS derivative."""
+    domain = unit_square_mesh_per_comm
+    graph_ = Graph()
+    c = fem.Constant(domain, ScalarType(3.0), graph=graph_)
+    measure = ufl.Measure(measure_name, domain=domain)
+    measure_size = domain.comm.allreduce(
+        fem.assemble_scalar(fem.form(1.0 * measure)), op=MPI.SUM
+    )
+
+    V = fem.functionspace(domain, ("Lagrange", 1))
+    uh = fem.Function(V, graph=graph_)
+    u = ufl.TrialFunction(V)
+    v = ufl.TestFunction(V)
+    # Restrict the test argument on dS while leaving the constant unrestricted.
+    load_test = ufl.avg(v) if measure_name == "dS" else v
+    a = ufl.inner(u, v) * ufl.dx
+    L = c**2 * ufl.conj(load_test) * measure
+    # Both partial derivatives are independent of uh, so no forward solve is needed.
+    problem = fem.petsc.LinearProblem(
+        a,
+        L,
+        u=uh,
+        petsc_options_prefix="test_constant_measures_",
+        adjoint_petsc_options={
+            "ksp_type": "cg",
+            "pc_type": "jacobi",
+            "ksp_rtol": 1e-12,
+            "ksp_atol": 1e-14,
+            "ksp_error_if_not_converged": True,
+        },
+        graph=graph_,
+    )
+    edge = graph_.get_edge(graph_.get_node(id(c)), graph_.get_node(id(problem)))
+
+    seed = -2.5
+    adjoint_input = assemble_vector(fem.form(seed * ufl.conj(v) * ufl.dx))
+    try:
+        adjoint_input.ghostUpdate(
+            addv=PETSc.InsertMode.ADD, mode=PETSc.ScatterMode.REVERSE
+        )
+        edge.input_value = adjoint_input
+        gradient = edge.calculate_adjoint()
+    finally:
+        adjoint_input.destroy()
+
+    # Taking v = 1 gives J = integral(u dx) = c^2 integral(1 dmeasure).
+    assert np.isclose(gradient, seed * 6.0 * measure_size)

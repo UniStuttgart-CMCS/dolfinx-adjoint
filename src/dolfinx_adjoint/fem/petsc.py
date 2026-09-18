@@ -109,9 +109,7 @@ class LinearProblem(LinearProblemBase):
                 if not bc_node == None:
                     # For linear problems, dF/dbc is represented by the bilinear form a.
                     ctx = [F_form, u_node, kwargs.get("bcs"), self._a]
-                    bc_edge = Problem_Boundary_Edge(
-                        bc_node, problem_node, ctx=ctx
-                    )
+                    bc_edge = Problem_Boundary_Edge(bc_node, problem_node, ctx=ctx)
                     _graph.add_edge(bc_edge)
                     problem_node.append_gradFuncs(bc_edge)
                     bc_edge.set_next_functions(bc_node.get_gradFuncs())
@@ -240,9 +238,7 @@ class NonlinearProblem(NonlinearProblemBase):
                 bc_node = _graph.get_node(id(bc))
                 if not bc_node == None:
                     ctx = [F_form, u_node, kwargs.get("bcs"), self._J]
-                    bc_edge = Problem_Boundary_Edge(
-                        bc_node, problem_node, ctx=ctx
-                    )
+                    bc_edge = Problem_Boundary_Edge(bc_node, problem_node, ctx=ctx)
                     _graph.add_edge(bc_edge)
                     problem_node.append_gradFuncs(bc_edge)
                     bc_edge.set_next_functions(bc_node.get_gradFuncs())
@@ -531,9 +527,10 @@ class Problem_Constant_Edge(graph.Edge):
         function.x.array[:] = m.value
         replaced_form = ufl.replace(F, {m: function})
         # A uniform unit direction leaves only the residual's test argument.
-        dFdm = fem.petsc.assemble_vector(
-            fem.form(ufl.derivative(replaced_form, function, ufl.as_ufl(1.0)))
-        )
+        derivative = ufl.derivative(replaced_form, function, ufl.as_ufl(1.0))
+        # replace expands the derivative first; restore m to avoid unrestricted DG0 on dS.
+        derivative = ufl.replace(derivative, {function: m})
+        dFdm = fem.petsc.assemble_vector(fem.form(derivative))
 
         dFdm.ghostUpdate(addv=PETSc.InsertMode.ADD, mode=PETSc.ScatterMode.REVERSE)
 

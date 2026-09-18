@@ -165,6 +165,8 @@ class Form_Constant_Edge(graph.Edge):
         replaced_form = ufl.replace(ufl_form, {constant: function})
 
         derivative = ufl.derivative(replaced_form, function, ufl.as_ufl(1.0))
+        # replace expands the derivative first; restore c to avoid unrestricted DG0 on dS.
+        derivative = ufl.replace(derivative, {function: constant})
 
         return self.input_value * domain.comm.allreduce(
             fem.assemble_scalar(fem.form(derivative)), op=MPI.SUM

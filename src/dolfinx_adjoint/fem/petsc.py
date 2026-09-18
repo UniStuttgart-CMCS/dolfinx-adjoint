@@ -83,7 +83,7 @@ class LinearProblem(LinearProblemBase):
             coefficient_node = _graph.get_node(id(coefficient))
             if not coefficient_node == None:
                 ctx = [F_form, u_node, coefficient, kwargs.get("bcs"), _graph]
-                coefficient_edge = NonlinearProblem_Coefficient_Edge(
+                coefficient_edge = Problem_Coefficient_Edge(
                     coefficient_node, problem_node, ctx=ctx
                 )
                 _graph.add_edge(coefficient_edge)
@@ -95,7 +95,7 @@ class LinearProblem(LinearProblemBase):
             constant_node = _graph.get_node(id(constant))
             if not constant_node == None:
                 ctx = [F_form, u_node, constant, kwargs.get("bcs")]
-                constant_edge = NonlinearProblem_Constant_Edge(
+                constant_edge = Problem_Constant_Edge(
                     constant_node, problem_node, ctx=ctx
                 )
                 _graph.add_edge(constant_edge)
@@ -109,7 +109,7 @@ class LinearProblem(LinearProblemBase):
                 if not bc_node == None:
                     # For linear problems, dF/dbc is represented by the bilinear form a.
                     ctx = [F_form, u_node, kwargs.get("bcs"), self._a]
-                    bc_edge = NonlinearProblem_Boundary_Edge(
+                    bc_edge = Problem_Boundary_Edge(
                         bc_node, problem_node, ctx=ctx
                     )
                     _graph.add_edge(bc_edge)
@@ -215,7 +215,7 @@ class NonlinearProblem(NonlinearProblemBase):
             coefficient_node = _graph.get_node(id(coefficient))
             if not coefficient_node == None:
                 ctx = [F_form, u_node, coefficient, kwargs.get("bcs"), _graph]
-                coefficient_edge = NonlinearProblem_Coefficient_Edge(
+                coefficient_edge = Problem_Coefficient_Edge(
                     coefficient_node, problem_node, ctx=ctx
                 )
                 _graph.add_edge(coefficient_edge)
@@ -227,7 +227,7 @@ class NonlinearProblem(NonlinearProblemBase):
             constant_node = _graph.get_node(id(constant))
             if not constant_node == None:
                 ctx = [F_form, u_node, constant, kwargs.get("bcs")]
-                constant_edge = NonlinearProblem_Constant_Edge(
+                constant_edge = Problem_Constant_Edge(
                     constant_node, problem_node, ctx=ctx
                 )
                 _graph.add_edge(constant_edge)
@@ -240,7 +240,7 @@ class NonlinearProblem(NonlinearProblemBase):
                 bc_node = _graph.get_node(id(bc))
                 if not bc_node == None:
                     ctx = [F_form, u_node, kwargs.get("bcs"), self._J]
-                    bc_edge = NonlinearProblem_Boundary_Edge(
+                    bc_edge = Problem_Boundary_Edge(
                         bc_node, problem_node, ctx=ctx
                     )
                     _graph.add_edge(bc_edge)
@@ -415,15 +415,15 @@ class SolveNode(graph.Node):
         self.problemNode.object.solve()
 
 
-class NonlinearProblem_Coefficient_Edge(graph.Edge):
+class Problem_Coefficient_Edge(graph.Edge):
     """
-    Edge providing the adjoint equation for the derivative of the solution to the nonlinear problem with respect to the coefficient.
+    Edge providing the adjoint equation for the derivative of the solution to a linear or nonlinear problem with respect to the coefficient.
 
     """
 
     def calculate_adjoint(self):
         """
-        The method provides the adjoint equation for the derivative of the solution to the nonlinear problem with respect to the coefficient.
+        The method provides the adjoint equation for the derivative of the solution to a linear or nonlinear problem with respect to the coefficient.
 
         By taking the derivative of F(u) = 0 with respect to a coefficient f, we obtain a representation of du/df:
             dF/df = ∂F/∂u * du/df + ∂F/∂f = 0
@@ -478,15 +478,15 @@ class NonlinearProblem_Coefficient_Edge(graph.Edge):
         return gradient
 
 
-class NonlinearProblem_Constant_Edge(graph.Edge):
+class Problem_Constant_Edge(graph.Edge):
     """
-    Edge providing the adjoint equation for the derivative of the solution to the nonlinear problem with respect to the constant.
+    Edge providing the adjoint equation for the derivative of the solution to a linear or nonlinear problem with respect to the constant.
 
     """
 
     def calculate_adjoint(self):
         """
-        The method provides the adjoint equation for the derivative of the solution to the nonlinear problem with respect to the constant.
+        The method provides the adjoint equation for the derivative of the solution to a linear or nonlinear problem with respect to the constant.
 
         By taking the derivative of F(u) = 0 with respect to a constant c, we obtain a representation of du/dc:
             dF/dc = ∂F/∂u * du/dc + ∂F/∂c = 0
@@ -530,8 +530,9 @@ class NonlinearProblem_Constant_Edge(graph.Edge):
         function = fem.Function(DG0)
         function.x.array[:] = m.value
         replaced_form = ufl.replace(F, {m: function})
+        # A uniform unit direction leaves only the residual's test argument.
         dFdm = fem.petsc.assemble_vector(
-            fem.form(ufl.derivative(replaced_form, function))
+            fem.form(ufl.derivative(replaced_form, function, ufl.as_ufl(1.0)))
         )
 
         dFdm.ghostUpdate(addv=PETSc.InsertMode.ADD, mode=PETSc.ScatterMode.REVERSE)
@@ -540,15 +541,15 @@ class NonlinearProblem_Constant_Edge(graph.Edge):
         return adjoint_solution.x.petsc_vec.dot(dFdm)
 
 
-class NonlinearProblem_Boundary_Edge(graph.Edge):
+class Problem_Boundary_Edge(graph.Edge):
     """
-    Edge providing the adjoint equation for the derivative of the solution to the nonlinear problem with respect to the boundary condition.
+    Edge providing the adjoint equation for the derivative of the solution to a linear or nonlinear problem with respect to the boundary condition.
 
     """
 
     def calculate_adjoint(self):
         """
-        The method provides the adjoint equation for the derivative of the solution to the nonlinear problem with respect to the boundary condition.
+        The method provides the adjoint equation for the derivative of the solution to a linear or nonlinear problem with respect to the boundary condition.
 
         By taking the derivative of F(u) = 0 with respect to a boundary condition g, we obtain a representation of du/dg:
             dF/dg = ∂F/∂u * du/dg + ∂F/∂g = 0

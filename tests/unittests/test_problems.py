@@ -3,6 +3,8 @@
 import numpy as np
 import ufl
 from dolfinx import mesh
+from dolfinx.fem.petsc import assemble_vector
+from petsc4py import PETSc
 from petsc4py.PETSc import ScalarType
 
 from dolfinx_adjoint import Graph, fem
@@ -43,3 +45,46 @@ def test_problem_constant_gradient_is_taken_at_the_current_value(
     # dJ/dc = -4 c⁻⁵ is -0.125. Evaluating ∂F/∂c = 2c u v at the constructor
     # argument c = 1 halves it to -0.0625.
     assert np.isclose(gradient, -0.125)
+
+
+def test_nonlinear_problem_constant_edge_gradient(
+    unit_square_mesh_per_comm: mesh.Mesh,
+) -> None:
+    """The scalar gradient includes the seed and contributions from every rank."""
+    domain = unit_square_mesh_per_comm
+    graph_ = Graph()
+    c = fem.Constant(domain, ScalarType(8.0), graph=graph_)
+
+    V = fem.functionspace(domain, ("Lagrange", 1))
+    uh = fem.Function(V, graph=graph_)
+    # Supply the exact state, including ghosts, to test the edge without a forward solve.
+    uh.x.array[:] = 2.0
+    v = ufl.TestFunction(V)
+    F = (uh**3 - c) * ufl.conj(v) * ufl.dx
+    problem = fem.petsc.NonlinearProblem(
+        F,
+        uh,
+        petsc_options_prefix="test_constant_direction_",
+        adjoint_petsc_options={
+            "ksp_type": "cg",
+            "pc_type": "jacobi",
+            "ksp_rtol": 1e-12,
+            "ksp_atol": 1e-14,
+            "ksp_error_if_not_converged": True,
+        },
+        graph=graph_,
+    )
+    edge = graph_.get_edge(graph_.get_node(id(c)), graph_.get_node(id(problem)))
+
+    x = ufl.SpatialCoordinate(domain)
+    seed = assemble_vector(fem.form((1 + x[0]) * ufl.conj(v) * ufl.dx))
+    try:
+        seed.ghostUpdate(addv=PETSc.InsertMode.ADD, mode=PETSc.ScatterMode.REVERSE)
+        edge.input_value = seed
+        gradient = edge.calculate_adjoint()
+    finally:
+        seed.destroy()
+
+    # u = c^(1/3), J = integral((1 + x) u) = 3u/2 on the unit square.
+    # Thus dJ/dc = (3/2)/(3u^2) = 1/8 at c = 8, on every rank.
+    assert np.isclose(gradient, 0.125)

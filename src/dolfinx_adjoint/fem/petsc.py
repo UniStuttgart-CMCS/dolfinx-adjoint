@@ -530,8 +530,9 @@ class NonlinearProblem_Constant_Edge(graph.Edge):
         function = fem.Function(DG0)
         function.x.array[:] = m.value
         replaced_form = ufl.replace(F, {m: function})
+        # A uniform unit direction leaves only the residual's test argument.
         dFdm = fem.petsc.assemble_vector(
-            fem.form(ufl.derivative(replaced_form, function))
+            fem.form(ufl.derivative(replaced_form, function, ufl.as_ufl(1.0)))
         )
 
         dFdm.ghostUpdate(addv=PETSc.InsertMode.ADD, mode=PETSc.ScatterMode.REVERSE)

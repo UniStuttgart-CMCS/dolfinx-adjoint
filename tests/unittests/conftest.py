@@ -9,3 +9,13 @@ from mpi4py import MPI
 def unit_square_mesh() -> mesh.Mesh:
     """Create one unit-square mesh on COMM_SELF per test module."""
     return mesh.create_unit_square(MPI.COMM_SELF, 4, 4)
+
+
+@pytest.fixture(
+    scope="module",
+    params=[MPI.COMM_SELF, MPI.COMM_WORLD],
+    ids=["COMM_SELF", "COMM_WORLD"],
+)
+def unit_square_mesh_per_comm(request: pytest.FixtureRequest) -> mesh.Mesh:
+    """Create one unit-square mesh per communicator and test module."""
+    return mesh.create_unit_square(request.param, 4, 4)

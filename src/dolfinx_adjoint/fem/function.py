@@ -88,6 +88,10 @@ class Function(fem.Function):
                 of dolfinx is used without any additional functionalities.
             version (int, optional): An additional keyword argument to specify the version of the operation in the graph. If not present, the version is set to 0.
 
+        Note:
+            The node is added in any case, since it is the version of this function the
+            subsequent operations depend on.
+
         """
         self.x.array[:] = function.x.array[:]
 
@@ -100,6 +104,9 @@ class Function(fem.Function):
         _graph.add_node(assign_node)
 
         function_node = _graph.get_node(id(function))
+        if function_node is None:
+            return
+
         assign_edge = graph.Edge(function_node, assign_node)
         assign_node.set_gradFuncs([assign_edge])
         _graph.add_edge(assign_edge)

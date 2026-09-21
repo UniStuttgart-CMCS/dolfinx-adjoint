@@ -93,13 +93,19 @@ def test_nonlinear_problem_constant_edge_gradient(
 
 
 @pytest.mark.parametrize("measure_name", ["dx", "ds", "dS"])
+@pytest.mark.parametrize(
+    "value",
+    [3.0, (3.0,), (3.0, 2.0), (3.0, 2.0, 1.0)],
+    ids=["scalar", "vector1", "vector2", "vector3"],
+)
 def test_problem_constant_gradient_on_measures(
-    unit_square_mesh_per_comm: mesh.Mesh, measure_name: str
+    unit_square_mesh_per_comm: mesh.Mesh, measure_name: str, value: float | tuple
 ) -> None:
-    """Catch an unrestricted DG0 replacement in the residual's dS derivative."""
+    """Catch incorrect Constant components."""
     domain = unit_square_mesh_per_comm
     graph_ = Graph()
-    c = fem.Constant(domain, ScalarType(3.0), graph=graph_)
+    value = np.asarray(value, dtype=ScalarType)
+    c = fem.Constant(domain, value, graph=graph_)
     measure = ufl.Measure(measure_name, domain=domain)
     measure_size = domain.comm.allreduce(
         fem.assemble_scalar(fem.form(1.0 * measure)), op=MPI.SUM
@@ -109,10 +115,11 @@ def test_problem_constant_gradient_on_measures(
     uh = fem.Function(V, graph=graph_)
     u = ufl.TrialFunction(V)
     v = ufl.TestFunction(V)
-    # Restrict the test argument on dS while leaving the constant unrestricted.
-    load_test = ufl.avg(v) if measure_name == "dS" else v
     a = ufl.inner(u, v) * ufl.dx
-    L = c**2 * ufl.conj(load_test) * measure
+    restricted_c = c("+") if measure_name == "dS" else c
+    load_test = ufl.avg(v) if measure_name == "dS" else v
+    L = ufl.inner(restricted_c, restricted_c) * ufl.conj(load_test) * measure
+
     # Both partial derivatives are independent of uh, so no forward solve is needed.
     problem = fem.petsc.LinearProblem(
         a,
@@ -141,5 +148,10 @@ def test_problem_constant_gradient_on_measures(
     finally:
         adjoint_input.destroy()
 
-    # Taking v = 1 gives J = integral(u dx) = c^2 integral(1 dmeasure).
-    assert np.isclose(gradient, seed * 6.0 * measure_size)
+    expected = seed * 2.0 * value * measure_size
+    if value.ndim == 0:
+        assert np.isscalar(gradient) and np.isclose(gradient, expected)
+    else:
+        assert gradient.getSize() == expected.size
+        if gradient.getLocalSize() > 0:
+            np.testing.assert_allclose(gradient.array_r, expected.ravel())

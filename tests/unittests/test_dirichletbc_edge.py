@@ -146,7 +146,14 @@ def test_gradient_of_a_value_on_a_collapsed_space(
     )
 
 
-def test_gradient_of_a_constant_value(unit_square_mesh_per_comm: mesh.Mesh):
+@pytest.mark.parametrize(
+    "value",
+    [1.0, (1.0, 2.0), ((1.0, 2.0), (3.0, 4.0))],
+    ids=["scalar constant", "vector constant", "tensor constant"],
+)
+def test_gradient_of_a_constant_value(
+    value: float | tuple, unit_square_mesh_per_comm: mesh.Mesh
+):
     """The gradient of a constant value adds up the accumulated gradient over the entries the condition sets."""
     graph_ = Graph()
     domain = unit_square_mesh_per_comm
@@ -154,24 +161,35 @@ def test_gradient_of_a_constant_value(unit_square_mesh_per_comm: mesh.Mesh):
     domain.topology.create_connectivity(facet_dim, domain.topology.dim)
     facets = mesh.exterior_facet_indices(domain.topology)
 
-    V = fem.functionspace(domain, ("Lagrange", 1))
+    value = np.asarray(value, dtype=default_scalar_type)
+    V = fem.functionspace(domain, ("Lagrange", 1, np.shape(value)))
     dofs = fem.locate_dofs_topological(V, facet_dim, facets)
 
     # A constant is broadcast onto the space it constrains, which it is passed with.
-    c = fem.Constant(domain, default_scalar_type(1.0), name="c", graph=graph_)
+    c = fem.Constant(domain, value, name="c", graph=graph_)
     bc = fem.dirichletbc(c, dofs, V, graph=graph_)
 
     u = _distinct_function(V)
 
-    # What the condition does with a constant of one, performed by DOLFINx.
-    condition_of_one = dolfinx.fem.Function(V)
-    dolfinx.fem.dirichletbc(default_scalar_type(1.0), dofs, V).set(
-        condition_of_one.x.array
-    )
+    # Determine every component of the transpose using DOLFINx's forward operation.
+    # Every rank visits the same directions; each dot counts owned entries globally.
+    expected = np.zeros_like(value)
+    for component in np.ndindex(value.shape):
+        direction = np.zeros_like(value)
+        direction[component] = 1.0
+        condition_of_direction = dolfinx.fem.Function(V)
+        direction_bc = dolfinx.fem.dirichletbc(direction, dofs, V)
+        direction_bc.set(condition_of_direction.x.array)
+        expected[component] = u.x.petsc_vec.dot(condition_of_direction.x.petsc_vec)
 
     edge = graph_.get_edge(graph_.get_node(id(c)), graph_.get_node(id(bc)))
     edge.input_value = u.x.petsc_vec
 
-    assert np.isclose(
-        edge.calculate_adjoint(), u.x.petsc_vec.dot(condition_of_one.x.petsc_vec)
-    )
+    gradient = edge.calculate_adjoint()
+
+    if value.ndim == 0:
+        assert np.isscalar(gradient) and np.isclose(gradient, expected)
+    else:
+        assert gradient.getSize() == expected.size
+        if gradient.getLocalSize() > 0:
+            np.testing.assert_allclose(gradient.array_r, expected.ravel())

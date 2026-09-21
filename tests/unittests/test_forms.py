@@ -35,17 +35,24 @@ def test_form_constant_edge_gradient_without_coefficient(
 
 
 @pytest.mark.parametrize("measure_name", ["dx", "ds", "dS"])
+@pytest.mark.parametrize(
+    "value",
+    [2.0, (2.0,), (2.0, 3.0), (2.0, 3.0, 5.0), ((2.0, 3.0), (5.0, 7.0))],
+    ids=["scalar", "vector1", "vector2", "vector3", "tensor"],
+)
 def test_form_constant_gradient_on_measures(
-    unit_square_mesh_per_comm: mesh.Mesh, measure_name: str
+    unit_square_mesh_per_comm: mesh.Mesh, measure_name: str, value: float | tuple
 ) -> None:
-    """Catch an unrestricted DG0 replacement surviving differentiation on dS.
+    """Catch incorrect Constant components and lost explicit restrictions on dS.
 
     The constant edge must capture c rather than the tracked coefficient u.
     The dx and ds cases guard against a correction that changes their gradients.
     """
+
     domain = unit_square_mesh_per_comm
     graph_ = Graph()
-    c = fem.Constant(domain, ScalarType(2.0), graph=graph_)
+    value = np.asarray(value, dtype=ScalarType)
+    c = fem.Constant(domain, value, graph=graph_)
     measure = ufl.Measure(measure_name, domain=domain)
 
     V = fem.functionspace(domain, ("Lagrange", 1))
@@ -57,13 +64,16 @@ def test_form_constant_gradient_on_measures(
         fem.assemble_scalar(fem.form(weight * measure)), op=MPI.SUM
     )
 
-    # Keep c outside avg: averaging the whole integrand would hide the failure.
-    J_form = c**2 * weight * measure
+    restricted_c = c("+") if measure_name == "dS" else c
+    J_form = ufl.inner(restricted_c, restricted_c) * weight * measure
     J = fem.assemble_scalar(fem.form(J_form, graph=graph_), graph=graph_)
     seed = -2.5
     gradient = graph_.backprop(id(J), id(c), seed=seed)
 
-    # Hold u fixed: d/dc integral(c^2 weight) = 2c integral(weight).
-    # At c = 2 this differs from differentiating w.r.t. u in direction 1,
-    # which would give c^2 integral(1) instead.
-    assert np.isclose(gradient, seed * 4.0 * weighted_measure)
+    expected = seed * 2.0 * value * weighted_measure
+    if value.ndim == 0:
+        assert np.isscalar(gradient) and np.isclose(gradient, expected)
+    else:
+        assert gradient.getSize() == expected.size
+        if gradient.getLocalSize() > 0:
+            np.testing.assert_allclose(gradient.array_r, expected.ravel())

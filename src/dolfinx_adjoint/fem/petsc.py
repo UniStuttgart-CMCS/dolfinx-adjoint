@@ -1,6 +1,7 @@
 from typing import Any
 
 import ufl
+from basix.ufl import real_element
 from dolfinx import fem
 from dolfinx.fem.petsc import LinearProblem as LinearProblemBase
 from dolfinx.fem.petsc import NonlinearProblem as NonlinearProblemBase
@@ -94,7 +95,14 @@ class LinearProblem(LinearProblemBase):
         for constant in F_form.constants():
             constant_node = _graph.get_node(id(constant))
             if not constant_node == None:
-                ctx = [F_form, u_node, constant, kwargs.get("bcs")]
+                R = fem.functionspace(
+                    constant.domain,
+                    real_element(
+                        constant.domain.basix_cell(), value_shape=constant.ufl_shape
+                    ),
+                )
+                function = fem.Function(R, dtype=constant.dtype)
+                ctx = [F_form, u_node, constant, kwargs.get("bcs"), function]
                 constant_edge = Problem_Constant_Edge(
                     constant_node, problem_node, ctx=ctx
                 )
@@ -224,7 +232,14 @@ class NonlinearProblem(NonlinearProblemBase):
         for constant in F_form.constants():
             constant_node = _graph.get_node(id(constant))
             if not constant_node == None:
-                ctx = [F_form, u_node, constant, kwargs.get("bcs")]
+                R = fem.functionspace(
+                    constant.domain,
+                    real_element(
+                        constant.domain.basix_cell(), value_shape=constant.ufl_shape
+                    ),
+                )
+                function = fem.Function(R, dtype=constant.dtype)
+                ctx = [F_form, u_node, constant, kwargs.get("bcs"), function]
                 constant_edge = Problem_Constant_Edge(
                     constant_node, problem_node, ctx=ctx
                 )
@@ -495,12 +510,12 @@ class Problem_Constant_Edge(graph.Edge):
             λᵀ * ∂F/∂c
 
         Returns:
-            (PETSc.Vec): The accumulated gradient up to this point in the computational graph.
+            float or complex or PETSc.Vec: The accumulated gradient up to this point in the computational graph.
 
         """
 
         # Extract variables from contextvariable ctx
-        F, u_node, m, bcs = self.ctx
+        F, u_node, m, bcs, function = self.ctx
 
         u = u_node.get_object()
 
@@ -519,23 +534,21 @@ class Problem_Constant_Edge(graph.Edge):
             petsc_options_prefix=self.successor.adjoint_petsc_options_prefix,
         ).solve()
 
-        # Create a function based on the constant in order to use ufl.derivative
-        # to calculate ∂F/∂m
-        domain = m.domain
-        DG0 = fem.functionspace(domain, ("DG", 0))
-        function = fem.Function(DG0)
-        function.x.array[:] = m.value
         replaced_form = ufl.replace(F, {m: function})
-        # A uniform unit direction leaves only the residual's test argument.
-        derivative = ufl.derivative(replaced_form, function, ufl.as_ufl(1.0))
-        # replace expands the derivative first; restore m to avoid unrestricted DG0 on dS.
+        derivative = ufl.derivative(replaced_form, function)
         derivative = ufl.replace(derivative, {function: m})
-        dFdm = fem.petsc.assemble_vector(fem.form(derivative))
 
-        dFdm.ghostUpdate(addv=PETSc.InsertMode.ADD, mode=PETSc.ScatterMode.REVERSE)
+        sensitivity = ufl.action(ufl.adjoint(derivative), adjoint_solution)
+        gradient = fem.petsc.assemble_vector(fem.form(sensitivity))
+        gradient.ghostUpdate(addv=PETSc.InsertMode.ADD, mode=PETSc.ScatterMode.REVERSE)
 
-        # Calculate λᵀ * ∂F/∂m
-        return adjoint_solution.x.petsc_vec.dot(dFdm)
+        # Shape preserves the distinction between a scalar and a one-component vector.
+        if not m.ufl_shape:
+            try:
+                return gradient.sum()
+            finally:
+                gradient.destroy()
+        return gradient
 
 
 class Problem_Boundary_Edge(graph.Edge):

@@ -1,5 +1,6 @@
 import numpy as np
-from dolfinx import fem, la
+from basix.ufl import real_element
+from dolfinx import fem
 
 import dolfinx_adjoint.graph as graph
 from dolfinx_adjoint.utils import bind_arguments
@@ -23,9 +24,6 @@ def dirichletbc(*args, **kwargs):
         graph: An additional keyword argument to specifier wheter the assemble
             operation should be added to the graph. If not present, the original functionality
             of dolfinx is used without any additional functionalities.
-
-    Raises:
-        NotImplementedError: If the value is a constant holding more than one value.
 
     """
 
@@ -59,22 +57,16 @@ def dirichletbc(*args, **kwargs):
             value_node, dirichletbc_node, ctx=ctx
         )
     else:
-        if np.size(value.value) > 1:
-            raise NotImplementedError(
-                "The gradient of a boundary condition whose value is a constant of more "
-                "than one value requires a sum for each of its components."
-            )
-        # The derivative of the boundary condition broadcasts the single value of the
-        # constant onto the dofs it constrains, so the adjoint equation only has to
-        # pick those dofs out of the accumulated gradient.
-        space = output.function_space
-        indicator = la.vector(
-            space.dofmap.index_map, space.dofmap.index_map_bs, dtype=value.dtype
+        R = fem.functionspace(
+            value.domain,
+            real_element(value.domain.basix_cell(), value_shape=value.ufl_shape),
         )
-        indicator.array[dofs[:num_owned]] = 1.0
-
+        interpolation = fem.petsc.interpolation_matrix(R, arguments["V"])
+        interpolation.assemble()
+        input_cache = interpolation.createVecLeft()
+        ctx = [dofs[:num_owned], value, interpolation, input_cache]
         dirichletbc_edge = DirichletBC_Constant_Edge(
-            value_node, dirichletbc_node, ctx=[indicator]
+            value_node, dirichletbc_node, ctx=ctx
         )
 
     dirichletbc_edge.set_next_functions(value_node.get_gradFuncs())
@@ -124,19 +116,33 @@ class DirichletBC_Constant_Edge(graph.Edge):
         """
         The method provides the adjoint equation for the derivative of the DirichletBC to the constant defining the value of the BC.
 
-        Since the constant holds a single value on every dof the boundary condition
-        constrains, the derivative of the boundary condition broadcasts it onto those
-        dofs, and the adjoint equation sums the accumulated gradient over them. The sum
-        is the inner product with a vector marking those dofs, which PETSc takes over the
-        entries every rank owns and reduces over the communicator of the vectors.
+        The cached DOLFINx interpolation matrix supplies the component mapping.
+        Its PETSc transpose product accumulates contributions across mesh ranks; masking only owned entries avoids counting ghost sensitivities twice.
 
         Returns:
-            (float): The accumulated gradient up to this point in the computational
-            graph, which the contributions of the same constant from the forms it
-            appears in are accumulated with.
-
+            float or complex or PETSc.Vec: The accumulated gradient up to this point in the computational
+            graph, which the contributions of the same constant from the forms it appears in are accumulated with.
         """
-        # Extract variables from contextvariable ctx
-        (indicator,) = self.ctx
 
-        return self.input_value.dot(indicator.petsc_vec)
+        owned_boundary_dofs, constant, interpolation, input_cache = self.ctx
+        input_cache.zeroEntries()
+        input_cache.array_w[owned_boundary_dofs] = self.input_value.array_r[
+            owned_boundary_dofs
+        ]
+        gradient = interpolation.createVecRight()
+        interpolation.multTranspose(input_cache, gradient)
+
+        # A one-component vector still has a vector-valued gradient.
+        if not constant.ufl_shape:
+            try:
+                return gradient.sum()
+            finally:
+                gradient.destroy()
+        return gradient
+
+    def __del__(self):
+        """Release the PETSc matrix and scratch vector owned by this edge."""
+        _, _, interpolation, input_cache = self.ctx
+        interpolation.destroy()
+        input_cache.destroy()
+        super().__del__()

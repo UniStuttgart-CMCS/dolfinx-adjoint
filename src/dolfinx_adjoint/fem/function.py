@@ -100,10 +100,11 @@ class Function(fem.Function):
         if _graph is None:
             return
 
+        function_node = _graph.get_node(id(function))
+
         assign_node = graph.Node(self, name=self.name, version=version)
         _graph.add_node(assign_node)
 
-        function_node = _graph.get_node(id(function))
         if function_node is None:
             return
 

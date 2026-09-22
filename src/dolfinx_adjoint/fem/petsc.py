@@ -46,20 +46,31 @@ class LinearProblem(LinearProblemBase):
         if _graph is None:
             return
 
-        if adjoint_petsc_options_prefix is None:
-            adjoint_petsc_options_prefix = kwargs["petsc_options_prefix"] + "adjoint_"
-
         arguments = bind_arguments(LinearProblemBase.__init__, self, *args, **kwargs)
         del arguments["self"]
         a = arguments.pop("a")
         L = arguments.pop("L")
+
+        if not isinstance(a, ufl.Form):
+            raise NotImplementedError(
+                "A blocked problem cannot be recorded, since the graph tracks the single form its edges differentiate. Without the graph, the problem behaves exactly like the one of DOLFINx."
+            )
+
+        if adjoint_petsc_options_prefix is None:
+            adjoint_petsc_options_prefix = (
+                arguments["petsc_options_prefix"] + "adjoint_"
+            )
+
         F_form = a - L
 
-        u = kwargs.get("u")
-        if u == None:
-            raise ValueError(
-                "The solution function u needs to be provided as a keyword argument for the LinearProblem when using the graph functionalities."
-            )
+        # The solution is recorded with the call, so that the problem the node rebuilds
+        # solves into the same function, and it is given a node, so that the edges of the
+        # problem can evaluate the state at it.
+        u = arguments["u"] = self.u
+        u_node = _graph.get_node(id(u))
+        if u_node is None:
+            u_node = graph.Node(u, name=u.name)
+            _graph.add_node(u_node)
 
         problem_node = LinearProblemNode(
             self,
@@ -71,8 +82,6 @@ class LinearProblem(LinearProblemBase):
         )
         _graph.add_node(problem_node)
 
-        u_node = _graph.get_node(id(u))
-
         # Replace Trial Function in the form with the solution function to be able to track the dependencies of the solution function on the coefficients and constants in the form.
         # By definition, the trial function is always the second argument in the form, thus F_form.arguments()[1] is used to identify the trial function.
         F_form = ufl.replace(F_form, {F_form.arguments()[1]: u})
@@ -83,7 +92,15 @@ class LinearProblem(LinearProblemBase):
                 continue
             coefficient_node = _graph.get_node(id(coefficient))
             if not coefficient_node == None:
-                ctx = [F_form, u_node, coefficient, kwargs.get("bcs"), _graph]
+                # The graph is referenced weakly: it owns this edge, and the edge only
+                # needs it to look up the state after the solve, which does not exist yet.
+                ctx = [
+                    F_form,
+                    u_node,
+                    coefficient,
+                    arguments.get("bcs"),
+                    _graph,
+                ]
                 coefficient_edge = Problem_Coefficient_Edge(
                     coefficient_node, problem_node, ctx=ctx
                 )
@@ -102,7 +119,7 @@ class LinearProblem(LinearProblemBase):
                     ),
                 )
                 function = fem.Function(R, dtype=constant.dtype)
-                ctx = [F_form, u_node, constant, kwargs.get("bcs"), function]
+                ctx = [F_form, u_node, constant, arguments.get("bcs"), function]
                 constant_edge = Problem_Constant_Edge(
                     constant_node, problem_node, ctx=ctx
                 )
@@ -111,12 +128,11 @@ class LinearProblem(LinearProblemBase):
                 constant_edge.set_next_functions(constant_node.get_gradFuncs())
 
         # Creating and adding edges to the graph if the boundary conditions are in the graph
-        if "bcs" in kwargs.keys() and not kwargs.get("bcs") == None:
-            for bc in kwargs.get("bcs"):
+        if arguments.get("bcs") is not None:
+            for bc in arguments.get("bcs"):
                 bc_node = _graph.get_node(id(bc))
                 if not bc_node == None:
-                    # For linear problems, dF/dbc is represented by the bilinear form a.
-                    ctx = [F_form, u_node, kwargs.get("bcs"), self._a]
+                    ctx = [F_form, u_node, arguments.get("bcs"), self._a]
                     bc_edge = Problem_Boundary_Edge(bc_node, problem_node, ctx=ctx)
                     _graph.add_edge(bc_edge)
                     problem_node.append_gradFuncs(bc_edge)
@@ -194,13 +210,27 @@ class NonlinearProblem(NonlinearProblemBase):
         if _graph is None:
             return
 
-        if adjoint_petsc_options_prefix is None:
-            adjoint_petsc_options_prefix = kwargs["petsc_options_prefix"] + "adjoint_"
-
         arguments = bind_arguments(NonlinearProblemBase.__init__, self, *args, **kwargs)
         del arguments["self"]
         F_form = arguments.pop("F")
         u = arguments.pop("u")
+
+        if not isinstance(F_form, ufl.Form):
+            raise NotImplementedError(
+                "A blocked problem cannot be recorded, since the graph tracks the single form its edges differentiate. Without the graph, the problem behaves exactly like the one of DOLFINx."
+            )
+
+        if adjoint_petsc_options_prefix is None:
+            adjoint_petsc_options_prefix = (
+                arguments["petsc_options_prefix"] + "adjoint_"
+            )
+
+        # The node of the solution lets the edges of the problem evaluate the state at
+        # it, also for a solution the caller never tracked.
+        u_node = _graph.get_node(id(u))
+        if u_node is None:
+            u_node = graph.Node(u, name=u.name)
+            _graph.add_node(u_node)
 
         problem_node = NonlinearProblemNode(
             self,
@@ -212,15 +242,21 @@ class NonlinearProblem(NonlinearProblemBase):
         )
         _graph.add_node(problem_node)
 
-        u_node = _graph.get_node(id(u))
-
         # Creating and adding edges to the graph if the coefficients are in the graph
         for coefficient in F_form.coefficients():
             if coefficient == u:
                 continue
             coefficient_node = _graph.get_node(id(coefficient))
             if not coefficient_node == None:
-                ctx = [F_form, u_node, coefficient, kwargs.get("bcs"), _graph]
+                # The graph is referenced weakly: it owns this edge, and the edge only
+                # needs it to look up the state after the solve, which does not exist yet.
+                ctx = [
+                    F_form,
+                    u_node,
+                    coefficient,
+                    arguments.get("bcs"),
+                    _graph,
+                ]
                 coefficient_edge = Problem_Coefficient_Edge(
                     coefficient_node, problem_node, ctx=ctx
                 )
@@ -239,7 +275,7 @@ class NonlinearProblem(NonlinearProblemBase):
                     ),
                 )
                 function = fem.Function(R, dtype=constant.dtype)
-                ctx = [F_form, u_node, constant, kwargs.get("bcs"), function]
+                ctx = [F_form, u_node, constant, arguments.get("bcs"), function]
                 constant_edge = Problem_Constant_Edge(
                     constant_node, problem_node, ctx=ctx
                 )
@@ -248,11 +284,11 @@ class NonlinearProblem(NonlinearProblemBase):
                 constant_edge.set_next_functions(constant_node.get_gradFuncs())
 
         # Creating and adding edges to the graph if the boundary conditions are in the graph
-        if "bcs" in kwargs.keys() and not kwargs.get("bcs") == None:
-            for bc in kwargs.get("bcs"):
+        if arguments.get("bcs") is not None:
+            for bc in arguments.get("bcs"):
                 bc_node = _graph.get_node(id(bc))
                 if not bc_node == None:
-                    ctx = [F_form, u_node, kwargs.get("bcs"), self._J]
+                    ctx = [F_form, u_node, arguments.get("bcs"), self._J]
                     bc_edge = Problem_Boundary_Edge(bc_node, problem_node, ctx=ctx)
                     _graph.add_edge(bc_edge)
                     problem_node.append_gradFuncs(bc_edge)

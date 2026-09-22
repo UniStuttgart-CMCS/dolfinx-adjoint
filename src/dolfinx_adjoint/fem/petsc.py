@@ -133,7 +133,7 @@ class LinearProblem(LinearProblemBase):
             for bc in arguments.get("bcs"):
                 bc_node = _graph.get_node(id(bc))
                 if not bc_node == None:
-                    ctx = [F_form, u_node, arguments.get("bcs"), self._a]
+                    ctx = [F_form, u_node, arguments.get("bcs")]
                     bc_edge = Problem_Boundary_Edge(bc_node, problem_node, ctx=ctx)
                     _graph.add_edge(bc_edge)
                     problem_node.append_gradFuncs(bc_edge)
@@ -289,7 +289,7 @@ class NonlinearProblem(NonlinearProblemBase):
             for bc in arguments.get("bcs"):
                 bc_node = _graph.get_node(id(bc))
                 if not bc_node == None:
-                    ctx = [F_form, u_node, arguments.get("bcs"), self._J]
+                    ctx = [F_form, u_node, arguments.get("bcs")]
                     bc_edge = Problem_Boundary_Edge(bc_node, problem_node, ctx=ctx)
                     _graph.add_edge(bc_edge)
                     problem_node.append_gradFuncs(bc_edge)
@@ -372,6 +372,24 @@ class LinearProblemNode(graph.AbstractNode):
         self.adjoint_petsc_options = adjoint_petsc_options
         self.adjoint_petsc_options_prefix = adjoint_petsc_options_prefix
 
+    @property
+    def adjoint_form_kwargs(self) -> dict:
+        """The arguments the forms of the adjoint equations are compiled with.
+
+        These are the recorded arguments that :py:func:`dolfinx.fem.form` accepts, read
+        from its signature rather than carried by name. A derivative of the problem spans
+        the meshes its forms span and is integrated the way they are, so compiling it
+        without them is a different compilation.
+
+        Returns:
+            The recorded arguments of the compilation.
+
+        """
+        import inspect
+
+        parameters = inspect.signature(fem.form).parameters
+        return {key: value for key, value in self.kwargs.items() if key in parameters}
+
     def __call__(self):
         """
         The initialization of the LinearProblem object.
@@ -419,6 +437,24 @@ class NonlinearProblemNode(graph.AbstractNode):
         self.kwargs = kwargs
         self.adjoint_petsc_options = adjoint_petsc_options
         self.adjoint_petsc_options_prefix = adjoint_petsc_options_prefix
+
+    @property
+    def adjoint_form_kwargs(self) -> dict:
+        """The arguments the forms of the adjoint equations are compiled with.
+
+        These are the recorded arguments that :py:func:`dolfinx.fem.form` accepts, read
+        from its signature rather than carried by name. A derivative of the problem spans
+        the meshes its forms span and is integrated the way they are, so compiling it
+        without them is a different compilation.
+
+        Returns:
+            The recorded arguments of the compilation.
+
+        """
+        import inspect
+
+        parameters = inspect.signature(fem.form).parameters
+        return {key: value for key, value in self.kwargs.items() if key in parameters}
 
     def __call__(self):
         """
@@ -511,11 +547,15 @@ class Problem_Coefficient_Edge(graph.Edge):
             bcs=bcs,
             petsc_options=self.successor.adjoint_petsc_options,
             petsc_options_prefix=self.successor.adjoint_petsc_options_prefix,
+            **self.successor.adjoint_form_kwargs,
         ).solve()
 
         # Calculate ∂F/∂m
         dFdm = fem.petsc.assemble_matrix(
-            fem.form(ufl.derivative(F_manipulated, m_node.data))
+            fem.form(
+                ufl.derivative(F_manipulated, m_node.data),
+                **self.successor.adjoint_form_kwargs,
+            )
         )
         dFdm.assemble()
 
@@ -569,6 +609,7 @@ class Problem_Constant_Edge(graph.Edge):
             bcs=bcs,
             petsc_options=self.successor.adjoint_petsc_options,
             petsc_options_prefix=self.successor.adjoint_petsc_options_prefix,
+            **self.successor.adjoint_form_kwargs,
         ).solve()
 
         replaced_form = ufl.replace(F, {m: function})
@@ -576,7 +617,9 @@ class Problem_Constant_Edge(graph.Edge):
         derivative = ufl.replace(derivative, {function: m})
 
         sensitivity = ufl.action(ufl.adjoint(derivative), adjoint_solution)
-        gradient = fem.petsc.assemble_vector(fem.form(sensitivity))
+        gradient = fem.petsc.assemble_vector(
+            fem.form(sensitivity, **self.successor.adjoint_form_kwargs)
+        )
         gradient.ghostUpdate(addv=PETSc.InsertMode.ADD, mode=PETSc.ScatterMode.REVERSE)
 
         # Shape preserves the distinction between a scalar and a one-component vector.
@@ -614,6 +657,9 @@ class Problem_Boundary_Edge(graph.Edge):
         the restriction to the controlled dofs is applied by
         :py:class:`dolfinx_adjoint.fem.bcs.DirichletBC_Function_Edge`.
 
+        ∂F/∂g is the Jacobian of the residual, which is derived here rather than taken
+        from the problem.
+
         Returns:
             (PETSc.Vec): The accumulated gradient up to this point in the computational graph.
             Only its entries owned by the calling rank are valid.
@@ -621,7 +667,7 @@ class Problem_Boundary_Edge(graph.Edge):
         """
 
         # Extract variables from contextvariable ctx
-        F, u_node, bcs, dFdbc_form = self.ctx
+        F, u_node, bcs = self.ctx
 
         u = u_node.get_object()
 
@@ -642,14 +688,16 @@ class Problem_Boundary_Edge(graph.Edge):
             bcs=bcs,
             petsc_options=self.successor.adjoint_petsc_options,
             petsc_options_prefix=self.successor.adjoint_petsc_options_prefix,
+            **self.successor.adjoint_form_kwargs,
         ).solve()
 
-        # ∂F/∂m = dFdbc defined in the nonlinear problem as a fem.Form
-        dFdbc = fem.petsc.assemble_matrix(dFdbc_form)
-        dFdbc.assemble()
-
-        # λᵀ * ∂F/∂g, the contribution of the lifting of the linear form
-        gradient = dFdbc.transpose() * adjoint_solution.x.petsc_vec
+        gradient = fem.petsc.assemble_vector(
+            fem.form(
+                ufl.action(J_adjoint, adjoint_solution),
+                **self.successor.adjoint_form_kwargs,
+            )
+        )
+        gradient.ghostUpdate(addv=PETSc.InsertMode.ADD, mode=PETSc.ScatterMode.REVERSE)
 
         # x, the direct contribution of the constrained dofs, where u = g holds exactly
         gradient.axpy(1.0, direct_contribution)
@@ -672,6 +720,7 @@ class AdjointProblem(LinearProblemBase):
         bcs=None,
         petsc_options: dict | None = None,
         petsc_options_prefix: str | None = None,
+        **kwargs,
     ):
         """Initialize the adjoint problem.
 
@@ -683,7 +732,15 @@ class AdjointProblem(LinearProblemBase):
             petsc_options: Options configuring the adjoint KSP.
             petsc_options_prefix: Solver options prefix, defaulting to
                 ``dolfinx_adjoint_``.
+            kwargs: The arguments of :py:class:`dolfinx.fem.petsc.LinearProblem` the
+                forms of the adjoint equation are compiled with, which are the ones the
+                problem it belongs to was set up with.
+
+        Note:
+            The solver of the adjoint equation is configured through ``adjoint_petsc_options`` instead.
+
         """
+
         if petsc_options_prefix is None:
             petsc_options_prefix = "dolfinx_adjoint_"
 
@@ -694,6 +751,7 @@ class AdjointProblem(LinearProblemBase):
             u=u,
             bcs=bcs,
             petsc_options_prefix=petsc_options_prefix,
+            **kwargs,
         )
         b.copy(self.b)
 

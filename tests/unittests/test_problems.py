@@ -155,3 +155,109 @@ def test_problem_constant_gradient_on_measures(
         assert gradient.getSize() == expected.size
         if gradient.getLocalSize() > 0:
             np.testing.assert_allclose(gradient.array_r, expected.ravel())
+
+
+def test_problem_without_u_replays_into_the_solution_it_holds(
+    unit_square_mesh: mesh.Mesh,
+) -> None:
+    """Catch a replay that rebuilds the problem around a function the caller cannot see."""
+    domain = unit_square_mesh
+    graph_ = Graph()
+    c = fem.Constant(domain, ScalarType(2.0), graph=graph_)
+
+    V = fem.functionspace(domain, ("Lagrange", 1))
+    u = ufl.TrialFunction(V)
+    v = ufl.TestFunction(V)
+    problem = fem.petsc.LinearProblem(
+        c * ufl.inner(u, v) * ufl.dx,
+        ufl.conj(v) * ufl.dx,
+        petsc_options_prefix="test_problem_without_u_",
+        petsc_options={"ksp_type": "preonly", "pc_type": "lu"},
+        graph=graph_,
+    )
+    problem.solve(graph=graph_)
+
+    c.value = 4.0
+    graph_.recalculate()
+
+    # P1 contains the exact solution u = c⁻¹, which is 0.25 after the update and 0.5
+    # for as long as the replay solves anything but this function.
+    assert np.allclose(problem.u.x.array, 0.25)
+
+
+def test_problem_records_a_solution_that_is_not_in_the_graph(
+    unit_square_mesh: mesh.Mesh,
+) -> None:
+    """Catch a problem built on a solution the graph does not know."""
+    domain = unit_square_mesh
+    graph_ = Graph()
+    c = fem.Constant(domain, ScalarType(2.0), graph=graph_)
+
+    V = fem.functionspace(domain, ("Lagrange", 1))
+    uh = fem.Function(V, name="uh")
+    u = ufl.TrialFunction(V)
+    v = ufl.TestFunction(V)
+
+    direct_solver = {"ksp_type": "preonly", "pc_type": "lu"}
+    problem = fem.petsc.LinearProblem(
+        c * ufl.inner(u, v) * ufl.dx,
+        ufl.conj(v) * ufl.dx,
+        u=uh,
+        petsc_options_prefix="test_problem_untracked_u_",
+        petsc_options=direct_solver,
+        adjoint_petsc_options=direct_solver,
+        graph=graph_,
+    )
+    problem.solve(graph=graph_)
+
+    J_form = ufl.inner(uh, uh) * ufl.dx
+    J = fem.assemble_scalar(fem.form(J_form, graph=graph_), graph=graph_)
+
+    gradient = graph_.backprop(id(J), id(c))
+
+    # P1 contains the exact solution u = c⁻¹, so J = c⁻² on the unit square and
+    # dJ/dc = -2 c⁻³ is -0.25.
+    assert np.isclose(gradient, -0.25)
+
+
+def test_problem_edges_compile_the_adjoint_with_the_recorded_arguments(
+    unit_square_mesh: mesh.Mesh,
+    left_half_unit_sqaure_mesh: tuple[mesh.Mesh, mesh.EntityMap],
+) -> None:
+    """Catch the coefficient edge of a problem compiling its derivative bare."""
+    submesh, cell_map = left_half_unit_sqaure_mesh
+    graph_ = Graph()
+
+    V = fem.functionspace(unit_square_mesh, ("Lagrange", 1))
+    f = fem.Function(V, name="f", graph=graph_)
+    f.x.array[:] = 1.0
+
+    W = fem.functionspace(submesh, ("Lagrange", 1))
+    uh = fem.Function(W, name="uh", graph=graph_)
+    u = ufl.TrialFunction(W)
+    v = ufl.TestFunction(W)
+    dx = ufl.Measure("dx", domain=submesh)
+
+    direct_solver = {"ksp_type": "preonly", "pc_type": "lu"}
+    problem = fem.petsc.LinearProblem(
+        ufl.inner(u, v) * dx,
+        ufl.inner(f, v) * dx,
+        u=uh,
+        entity_maps=[cell_map],
+        petsc_options_prefix="test_problem_entity_maps_",
+        petsc_options=direct_solver,
+        adjoint_petsc_options=direct_solver,
+        graph=graph_,
+    )
+    problem.solve(graph=graph_)
+
+    J_form = ufl.inner(uh, uh) * dx
+    J = fem.assemble_scalar(
+        fem.form(J_form, entity_maps=[cell_map], graph=graph_), graph=graph_
+    )
+
+    gradient = graph_.backprop(id(J), id(f))
+
+    # uh is the projection of f onto the half, so with f = 1 it is 1 and J is the area.
+    # dJ/df is 2 f on the half, whose entries sum to twice that area.
+    assert np.isclose(gradient.sum(), 1.0)

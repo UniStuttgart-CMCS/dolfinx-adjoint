@@ -113,6 +113,15 @@ class FormNode(graph.AbstractNode):
         self.ufl_form = ufl_form
         self.kwargs = kwargs
 
+    def release(self):
+        """
+        Releases the compiled form and the ufl form and arguments it was compiled from.
+
+        """
+        super().release()
+        self.ufl_form = None
+        self.kwargs = None
+
     def __call__(self):
         """
         The call method to perform the compile form operation.

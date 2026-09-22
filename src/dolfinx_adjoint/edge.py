@@ -63,6 +63,14 @@ class Edge:
         """Reference the successor node weakly."""
         self._successor = None if node is None else weakref.ref(node)
 
+    def release(self):
+        """
+        Releases the values saved in the edge.
+
+        """
+        self.ctx = None
+        self.input_value = None
+
     def set_next_functions(self, funcList: list):
         """
         This method sets the next functions in the path of the edge.

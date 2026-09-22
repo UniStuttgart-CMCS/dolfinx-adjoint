@@ -463,6 +463,17 @@ class Graph:
             except:
                 pass
 
+    def release(self):
+        """
+        Release the values saved in the graph
+
+        """
+
+        for edge in self.edges:
+            edge.release()
+        for node in self.nodes:
+            node.release()
+
     def recalculate(self):
         """
         Recalculate the graph

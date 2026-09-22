@@ -101,6 +101,13 @@ class AbstractNode:
         """
         return self.gradFuncs
 
+    def release(self):
+        """
+        Releases the values saved in the node.
+
+        """
+        self.object = None
+
     def __call__(self, *args, **kwargs):
         """
         This method is a placeholder for the computation of the node.
@@ -177,6 +184,15 @@ class Node(AbstractNode):
             self.grad = value.copy() if isinstance(value, PETSc.Vec) else value
         else:
             self.grad += value
+
+    def release(self):
+        """
+        Releases the object, the data and the gradient of the node.
+
+        """
+        super().release()
+        self.data = None
+        self.grad = None
 
     def __del__(self):
         del self.data

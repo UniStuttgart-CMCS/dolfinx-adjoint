@@ -81,6 +81,14 @@ class AssembleScalarNode(graph.Node):
         super().__init__(object, name="AssembleScalar")
         self.M = M
 
+    def release(self):
+        """
+        Releases the scalar, its data and gradient and the form it was assembled from.
+
+        """
+        super().release()
+        self.M = None
+
     def __call__(self):
         """
         The call method to perform the assemble operation.

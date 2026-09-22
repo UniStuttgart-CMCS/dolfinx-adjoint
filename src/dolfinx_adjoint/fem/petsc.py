@@ -416,6 +416,16 @@ class LinearProblemNode(graph.AbstractNode):
         parameters = inspect.signature(fem.form).parameters
         return {key: value for key, value in self.kwargs.items() if key in parameters}
 
+    def release(self):
+        """
+        Releases the problem and the forms and arguments it was created with.
+
+        """
+        super().release()
+        self.a = None
+        self.L = None
+        self.kwargs = None
+
     def __call__(self):
         """
         The initialization of the LinearProblem object.
@@ -482,6 +492,16 @@ class NonlinearProblemNode(graph.AbstractNode):
         parameters = inspect.signature(fem.form).parameters
         return {key: value for key, value in self.kwargs.items() if key in parameters}
 
+    def release(self):
+        """
+        Releases the problem and the form, solution and arguments it was created with.
+
+        """
+        super().release()
+        self.F = None
+        self.u = None
+        self.kwargs = None
+
     def __call__(self):
         """
         The initialization of the NonlinearProblem object.
@@ -514,6 +534,14 @@ class SolveNode(graph.Node):
         super().__init__(object, name=name, **kwargs)
         self.problemNode = problemNode
         self.initial_values = object.x.array.copy()
+
+    def release(self):
+        """
+        Releases the solution and the values it was solved from.
+
+        """
+        super().release()
+        self.initial_values = None
 
     def __call__(self):
         """

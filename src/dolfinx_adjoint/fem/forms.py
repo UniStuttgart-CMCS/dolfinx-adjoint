@@ -30,16 +30,23 @@ def form(*args, **kwargs):
         When a form is compiled from a UFL form, the dependencies in the symbolic equation is lost.
         The resulting compiled form does not support symbolic differentiation. The graph and the custom edges are used to keep track of the dependencies and the adjoint equations.
 
+    Note:
+        The arguments the form is compiled with are recorded together with it, so that the
+        compilations the node and its edges perform later are the compilation the caller
+        asked for.
+
     """
+
     _graph = kwargs.pop("graph", None)
     output = fem.form(*args, **kwargs)
     if _graph is None:
         return output
 
-    ufl_form = bind_arguments(fem.form, *args, **kwargs)["form"]
+    arguments = bind_arguments(fem.form, *args, **kwargs)
+    ufl_form = arguments.pop("form")
 
     # Creating and adding node to graph
-    form_node = FormNode(output, ufl_form)
+    form_node = FormNode(output, ufl_form, **arguments)
     _graph.add_node(form_node)
 
     # Creating and adding edges to the graph if the coefficients are in the graph
@@ -79,25 +86,32 @@ class FormNode(graph.AbstractNode):
     Node for the operation :py:func:`dolfinx.fem.form`.
 
     In order to compile the form from the ufl form in the forward pass,
-    the ufl form needs to be saved in the node.
+    the ufl form needs to be saved in the node, together with the arguments it was
+    compiled with.
 
     Attributes:
         object (Any): The object that is being compiled.
         ufl_form (ufl.form.Form): The ufl form that is being compiled.
+        kwargs (dict): The arguments of :py:func:`dolfinx.fem.form` the form was
+            compiled with, keyed by parameter name and without the form itself.
 
     """
 
-    def __init__(self, object: Any, ufl_form: ufl.form.Form):
+    def __init__(self, object: Any, ufl_form: ufl.form.Form, **kwargs):
         """
         Constructor for the FormNode.
 
         Args:
             object (Any): The object that is being compiled.
             ufl_form (ufl.form.Form): The ufl form that is being compiled.
+            kwargs: The remaining arguments of the recorded :py:func:`dolfinx.fem.form`
+                call, keyed by parameter name.
 
         """
+
         super().__init__(object, name="Form")
         self.ufl_form = ufl_form
+        self.kwargs = kwargs
 
     def __call__(self):
         """
@@ -107,7 +121,7 @@ class FormNode(graph.AbstractNode):
             Compiled finite element Form.
 
         """
-        output = fem.form(self.ufl_form)
+        output = fem.form(self.ufl_form, **self.kwargs)
         self.object = output
         return output
 
@@ -133,7 +147,9 @@ class Form_Coefficient_Edge(graph.Edge):
         ufl_form, coefficient = self.ctx
         derivative = ufl.derivative(ufl_form, coefficient)
 
-        output = fem.petsc.assemble_vector(fem.form(derivative))
+        output = fem.petsc.assemble_vector(
+            fem.form(derivative, **self.successor.kwargs)
+        )
 
         output.ghostUpdate(addv=PETSc.InsertMode.ADD, mode=PETSc.ScatterMode.REVERSE)
 
@@ -165,7 +181,9 @@ class Form_Constant_Edge(graph.Edge):
         derivative = ufl.derivative(replaced_form, function)
         derivative = ufl.replace(derivative, {function: constant})
 
-        output = fem.petsc.assemble_vector(fem.form(derivative))
+        output = fem.petsc.assemble_vector(
+            fem.form(derivative, **self.successor.kwargs)
+        )
         output.ghostUpdate(addv=PETSc.InsertMode.ADD, mode=PETSc.ScatterMode.REVERSE)
         output.scale(self.input_value)
 

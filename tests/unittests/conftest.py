@@ -19,3 +19,14 @@ def unit_square_mesh() -> mesh.Mesh:
 def unit_square_mesh_per_comm(request: pytest.FixtureRequest) -> mesh.Mesh:
     """Create one unit-square mesh per communicator and test module."""
     return mesh.create_unit_square(request.param, 4, 4)
+
+
+@pytest.fixture(scope="module")
+def left_half_unit_sqaure_mesh(
+    unit_square_mesh: mesh.Mesh,
+) -> tuple[mesh.Mesh, mesh.EntityMap]:
+    """The left half of the unit square, with the map back to the cells it was cut from."""
+    tdim = unit_square_mesh.topology.dim
+    cells = mesh.locate_entities(unit_square_mesh, tdim, lambda x: x[0] <= 0.5)
+    submesh, cell_map, _, _ = mesh.create_submesh(unit_square_mesh, tdim, cells)
+    return submesh, cell_map

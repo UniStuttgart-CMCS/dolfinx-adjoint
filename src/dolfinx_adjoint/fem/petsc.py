@@ -95,12 +95,14 @@ class LinearProblem(LinearProblemBase):
             if not coefficient_node == None:
                 # The graph is referenced weakly: it owns this edge, and the edge only
                 # needs it to look up the state after the solve, which does not exist yet.
+                adjoint_function = fem.Function(u.function_space, name="adjoint_rhs")
                 ctx = [
                     F_form,
                     u_node,
                     coefficient,
                     arguments.get("bcs"),
                     weakref.ref(_graph),
+                    adjoint_function,
                 ]
                 coefficient_edge = Problem_Coefficient_Edge(
                     coefficient_node, problem_node, ctx=ctx
@@ -120,7 +122,15 @@ class LinearProblem(LinearProblemBase):
                     ),
                 )
                 function = fem.Function(R, dtype=constant.dtype)
-                ctx = [F_form, u_node, constant, arguments.get("bcs"), function]
+                adjoint_function = fem.Function(u.function_space, name="adjoint_rhs")
+                ctx = [
+                    F_form,
+                    u_node,
+                    constant,
+                    arguments.get("bcs"),
+                    function,
+                    adjoint_function,
+                ]
                 constant_edge = Problem_Constant_Edge(
                     constant_node, problem_node, ctx=ctx
                 )
@@ -133,7 +143,10 @@ class LinearProblem(LinearProblemBase):
             for bc in arguments.get("bcs"):
                 bc_node = _graph.get_node(id(bc))
                 if not bc_node == None:
-                    ctx = [F_form, u_node, arguments.get("bcs")]
+                    adjoint_function = fem.Function(
+                        u.function_space, name="adjoint_rhs"
+                    )
+                    ctx = [F_form, u_node, arguments.get("bcs"), adjoint_function]
                     bc_edge = Problem_Boundary_Edge(bc_node, problem_node, ctx=ctx)
                     _graph.add_edge(bc_edge)
                     problem_node.append_gradFuncs(bc_edge)
@@ -251,12 +264,14 @@ class NonlinearProblem(NonlinearProblemBase):
             if not coefficient_node == None:
                 # The graph is referenced weakly: it owns this edge, and the edge only
                 # needs it to look up the state after the solve, which does not exist yet.
+                function = fem.Function(u.function_space, name="adjoint_rhs")
                 ctx = [
                     F_form,
                     u_node,
                     coefficient,
                     arguments.get("bcs"),
                     weakref.ref(_graph),
+                    function,
                 ]
                 coefficient_edge = Problem_Coefficient_Edge(
                     coefficient_node, problem_node, ctx=ctx
@@ -276,7 +291,15 @@ class NonlinearProblem(NonlinearProblemBase):
                     ),
                 )
                 function = fem.Function(R, dtype=constant.dtype)
-                ctx = [F_form, u_node, constant, arguments.get("bcs"), function]
+                adjoint_function = fem.Function(u.function_space, name="adjoint_rhs")
+                ctx = [
+                    F_form,
+                    u_node,
+                    constant,
+                    arguments.get("bcs"),
+                    function,
+                    adjoint_function,
+                ]
                 constant_edge = Problem_Constant_Edge(
                     constant_node, problem_node, ctx=ctx
                 )
@@ -289,7 +312,10 @@ class NonlinearProblem(NonlinearProblemBase):
             for bc in arguments.get("bcs"):
                 bc_node = _graph.get_node(id(bc))
                 if not bc_node == None:
-                    ctx = [F_form, u_node, arguments.get("bcs")]
+                    adjoint_function = fem.Function(
+                        u.function_space, name="adjoint_rhs"
+                    )
+                    ctx = [F_form, u_node, arguments.get("bcs"), adjoint_function]
                     bc_edge = Problem_Boundary_Edge(bc_node, problem_node, ctx=ctx)
                     _graph.add_edge(bc_edge)
                     problem_node.append_gradFuncs(bc_edge)
@@ -526,7 +552,7 @@ class Problem_Coefficient_Edge(graph.Edge):
 
         """
         # Extract variables from contextvariable ctx
-        F, u_node, m, bcs, graph_ref = self.ctx
+        F, u_node, m, bcs, graph_ref, adjoint_function = self.ctx
 
         m_node = self.predecessor
 
@@ -543,7 +569,7 @@ class Problem_Coefficient_Edge(graph.Edge):
         adjoint_solution = AdjointProblem(
             J_adjoint,
             -self.input_value,
-            fem.Function(V),
+            adjoint_function,
             bcs=bcs,
             petsc_options=self.successor.adjoint_petsc_options,
             petsc_options_prefix=self.successor.adjoint_petsc_options_prefix,
@@ -592,7 +618,7 @@ class Problem_Constant_Edge(graph.Edge):
         """
 
         # Extract variables from contextvariable ctx
-        F, u_node, m, bcs, function = self.ctx
+        F, u_node, m, bcs, function, adjoint_function = self.ctx
 
         u = u_node.get_object()
 
@@ -605,7 +631,7 @@ class Problem_Constant_Edge(graph.Edge):
         adjoint_solution = AdjointProblem(
             J_adjoint,
             -self.input_value,
-            fem.Function(V),
+            adjoint_function,
             bcs=bcs,
             petsc_options=self.successor.adjoint_petsc_options,
             petsc_options_prefix=self.successor.adjoint_petsc_options_prefix,
@@ -667,7 +693,7 @@ class Problem_Boundary_Edge(graph.Edge):
         """
 
         # Extract variables from contextvariable ctx
-        F, u_node, bcs = self.ctx
+        F, u_node, bcs, adjoint_function = self.ctx
 
         u = u_node.get_object()
 
@@ -684,7 +710,7 @@ class Problem_Boundary_Edge(graph.Edge):
         adjoint_solution = AdjointProblem(
             J_adjoint,
             -self.input_value,
-            fem.Function(V),
+            adjoint_function,
             bcs=bcs,
             petsc_options=self.successor.adjoint_petsc_options,
             petsc_options_prefix=self.successor.adjoint_petsc_options_prefix,

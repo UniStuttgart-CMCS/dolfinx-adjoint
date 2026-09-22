@@ -139,10 +139,3 @@ class DirichletBC_Constant_Edge(graph.Edge):
             finally:
                 gradient.destroy()
         return gradient
-
-    def __del__(self):
-        """Release the PETSc matrix and scratch vector owned by this edge."""
-        _, _, interpolation, input_cache = self.ctx
-        interpolation.destroy()
-        input_cache.destroy()
-        super().__del__()

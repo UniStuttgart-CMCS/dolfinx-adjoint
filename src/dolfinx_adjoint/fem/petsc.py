@@ -1,3 +1,4 @@
+import weakref
 from typing import Any
 
 import ufl
@@ -99,7 +100,7 @@ class LinearProblem(LinearProblemBase):
                     u_node,
                     coefficient,
                     arguments.get("bcs"),
-                    _graph,
+                    weakref.ref(_graph),
                 ]
                 coefficient_edge = Problem_Coefficient_Edge(
                     coefficient_node, problem_node, ctx=ctx
@@ -255,7 +256,7 @@ class NonlinearProblem(NonlinearProblemBase):
                     u_node,
                     coefficient,
                     arguments.get("bcs"),
-                    _graph,
+                    weakref.ref(_graph),
                 ]
                 coefficient_edge = Problem_Coefficient_Edge(
                     coefficient_node, problem_node, ctx=ctx
@@ -489,12 +490,12 @@ class Problem_Coefficient_Edge(graph.Edge):
 
         """
         # Extract variables from contextvariable ctx
-        F, u_node, m, bcs, _graph = self.ctx
+        F, u_node, m, bcs, graph_ref = self.ctx
 
         m_node = self.predecessor
 
         u = u_node.get_object()
-        u_next = _graph.get_node(u_node.id, version=u_node.version + 1)
+        u_next = graph_ref().get_node(u_node.id, version=u_node.version + 1)
 
         # Construct the transpose of the Jacobian J = ∂F/∂u
         V = u.function_space

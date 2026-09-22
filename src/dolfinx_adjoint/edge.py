@@ -1,3 +1,4 @@
+import weakref
 from typing import Any
 
 import petsc4py.PETSc as PETSc
@@ -19,7 +20,7 @@ class Edge:
 
     Attributes:
         predecessor (Node): The predecessor node of the edge
-        successor (Node): The successor node of the edge
+        successor (Node): The successor node of the edge, referenced weakly
         next_functions (list): The list of the gradient functions that are connected to the edge
         ctx (Any): The context variable of the edge
         input_value (float or PETSc.Vec): The input value of the edge
@@ -52,6 +53,16 @@ class Edge:
         self.next_functions = []
         self.ctx = ctx
         self.input_value = input_value
+
+    @property
+    def successor(self):
+        """The successor node of the edge, or None for an edge that ends nowhere."""
+        return None if self._successor is None else self._successor()
+
+    @successor.setter
+    def successor(self, node):
+        """Reference the successor node weakly."""
+        self._successor = None if node is None else weakref.ref(node)
 
     def set_next_functions(self, funcList: list):
         """

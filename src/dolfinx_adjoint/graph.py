@@ -1,3 +1,4 @@
+import gc
 import os
 
 import networkx as nx
@@ -203,9 +204,13 @@ class Graph:
     def to_networkx(self) -> DiGraph:
         """Convert the graph to a networkx graph
 
+        The representation is cached and cleared when the graph is deleted, so it is
+        empty if kept past the graph.
+
         Returns:
             nx_graph (nx.DiGraph): The networkx graph representation of the graph
         """
+
         if self._nx_graph is not None:
             # Update dynamic edge colors based on marking
             for edge in self.edges:
@@ -468,7 +473,8 @@ class Graph:
         Release the values saved in the graph
 
         """
-
+        # Collect the UFL cycles first, for the reason and TODO given in __del__
+        gc.collect()
         for edge in self.edges:
             edge.release()
         for node in self.nodes:
@@ -487,6 +493,13 @@ class Graph:
         Destructor for the graph
 
         """
+        if self._nx_graph is not None:
+            self._nx_graph.clear()
+
+        # TODO: Remove gc.collect() once UFL's MultiFunction no longer keeps handlers bound to itself
+        # (ufl/corealg/multifunction.py, `self._handlers`): each ufl.replace, action and
+        # adjoint leaves a Replacer cycle that pins the Functions in its mapping.
+        gc.collect()
         for edge in self.edges:
             del edge
         for node in self.nodes:

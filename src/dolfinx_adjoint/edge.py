@@ -20,7 +20,6 @@ class Edge:
 
     Attributes:
         predecessor (Node): The predecessor node of the edge
-        successor (Node): The successor node of the edge, referenced weakly
         next_functions (list): The list of the gradient functions that are connected to the edge
         ctx (Any): The context variable of the edge
         input_value (float or PETSc.Vec): The input value of the edge
@@ -56,7 +55,7 @@ class Edge:
 
     @property
     def successor(self):
-        """The successor node of the edge, or None for an edge that ends nowhere."""
+        """The successor node of the edge, referenced weakly, or None for an edge that ends nowhere."""
         return None if self._successor is None else self._successor()
 
     @successor.setter

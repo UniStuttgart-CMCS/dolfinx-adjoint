@@ -6,8 +6,6 @@ correctly computes gradients using the adjoint method by comparing against
 explicit adjoint calculations.
 """
 
-import gc
-
 import gmsh
 import numpy as np
 import pytest
@@ -51,7 +49,6 @@ def boundary_condition(request):
 @pytest.fixture(scope="module")
 def poisson_problem(cell_type, solver: bool, boundary_condition):
     """Set up the Poisson problem that will be used in all tests."""
-    gc.collect()
 
     # Create graph object to store the computational graph
     graph_ = Graph()
@@ -196,7 +193,6 @@ def poisson_problem(cell_type, solver: bool, boundary_condition):
 @pytest.fixture(scope="module")
 def plane_elasticity_problem():
     """Set up a plane elasticity problem with a controlled Dirichlet boundary."""
-    gc.collect()
 
     graph_ = Graph()
 
@@ -273,7 +269,6 @@ def plane_elasticity_problem():
 @pytest.fixture(scope="module")
 def linear_elasticity_problem():
     """Set up the linear elasticity problem that will be used in all tests."""
-    gc.collect()
 
     # Scaled variable
     L = 1
@@ -368,7 +363,6 @@ def linear_elasticity_problem():
 @pytest.fixture(scope="module")
 def stokes_problem():
     """Set up the Stokes problem that will be used in all tests."""
-    gc.collect()
 
     # Mesh parameters
     gmsh.initialize()
@@ -568,7 +562,6 @@ def stokes_problem():
 @pytest.fixture(scope="module")
 def heat_equation_problem():
     """Set up the heat equation problem that will be used in all tests."""
-    gc.collect()
 
     domain = mesh.create_unit_square(MPI.COMM_WORLD, 32, 32, mesh.CellType.triangle)
     V = fem.functionspace(domain, ("Lagrange", 1))

@@ -1,3 +1,4 @@
+import weakref
 from typing import Any
 
 import petsc4py.PETSc as PETSc
@@ -19,7 +20,6 @@ class Edge:
 
     Attributes:
         predecessor (Node): The predecessor node of the edge
-        successor (Node): The successor node of the edge
         next_functions (list): The list of the gradient functions that are connected to the edge
         ctx (Any): The context variable of the edge
         input_value (float or PETSc.Vec): The input value of the edge
@@ -32,16 +32,36 @@ class Edge:
 
         Args:
             predecessor (Node): The predecessor node of the edge
-            successor (Node): The successor node of the edge
+            successor (Node): The successor node of the edge. None marks an edge that is
+                not part of the graph, e.g. the edge that seeds the backpropagation.
             ctx (Any, optional): The context variable of the edge
             input_value (float or PETSc.Vec, optional): The input value of the edge
 
+        Raises:
+            ValueError: If the predecessor node is None, i.e. the operation was recorded
+                with an input that is not part of the graph. Such an operation does not
+                depend on a tracked value and therefore has no edge to record.
+
         """
+        if predecessor is None:
+            raise ValueError(
+                f"The edge into {successor} has no predecessor node, since the operation was recorded with an input that is not part of the graph."
+            )
         self.predecessor = predecessor
         self.successor = successor
         self.next_functions = []
         self.ctx = ctx
         self.input_value = input_value
+
+    @property
+    def successor(self):
+        """The successor node of the edge, referenced weakly, or None for an edge that ends nowhere."""
+        return None if self._successor is None else self._successor()
+
+    @successor.setter
+    def successor(self, node):
+        """Reference the successor node weakly."""
+        self._successor = None if node is None else weakref.ref(node)
 
     def set_next_functions(self, funcList: list):
         """

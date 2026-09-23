@@ -1,6 +1,8 @@
+import weakref
 from typing import Any
 
 import ufl
+from basix.ufl import real_element
 from dolfinx import fem
 from dolfinx.fem.petsc import LinearProblem as LinearProblemBase
 from dolfinx.fem.petsc import NonlinearProblem as NonlinearProblemBase
@@ -8,6 +10,7 @@ from dolfinx.fem.petsc import assign, set_bc
 from petsc4py import PETSc
 
 import dolfinx_adjoint.graph as graph
+from dolfinx_adjoint.utils import bind_arguments
 
 
 class LinearProblem(LinearProblemBase):
@@ -20,12 +23,12 @@ class LinearProblem(LinearProblemBase):
     """
 
     def __init__(self, *args, **kwargs):
-        """OVERLOADS: :py:func:`dolfinx.fem.petsc.LinearProblem.__init__`.
+        """OVERLOADS: :py:class:`dolfinx.fem.petsc.LinearProblem`.
         Initialize solver for solving a linear problem
 
         Args:
-            args: Arguments to :py:func:`dolfinx.fem.petsc.LinearProblem.__init__`.
-            kwargs: Keyword arguments to :py:func:`dolfinx.fem.petsc.LinearProblem.__init__`.
+            args: Arguments to :py:class:`dolfinx.fem.petsc.LinearProblem`.
+            kwargs: Keyword arguments to :py:class:`dolfinx.fem.petsc.LinearProblem`.
             graph: An additional keyword argument to specifier whether the assemble
                 operation should be added to the graph. If not present, the original functionality
                 of dolfinx is used without any additional functionalities.
@@ -44,18 +47,31 @@ class LinearProblem(LinearProblemBase):
         if _graph is None:
             return
 
-        if adjoint_petsc_options_prefix is None:
-            adjoint_petsc_options_prefix = kwargs["petsc_options_prefix"] + "adjoint_"
+        arguments = bind_arguments(LinearProblemBase.__init__, self, *args, **kwargs)
+        del arguments["self"]
+        a = arguments.pop("a")
+        L = arguments.pop("L")
 
-        a = args[0]
-        L = args[1]
+        if not isinstance(a, ufl.Form):
+            raise NotImplementedError(
+                "A blocked problem cannot be recorded, since the graph tracks the single form its edges differentiate. Without the graph, the problem behaves exactly like the one of DOLFINx."
+            )
+
+        if adjoint_petsc_options_prefix is None:
+            adjoint_petsc_options_prefix = (
+                arguments["petsc_options_prefix"] + "adjoint_"
+            )
+
         F_form = a - L
 
-        u = kwargs.get("u")
-        if u == None:
-            raise ValueError(
-                "The solution function u needs to be provided as a keyword argument for the LinearProblem when using the graph functionalities."
-            )
+        # The solution is recorded with the call, so that the problem the node rebuilds
+        # solves into the same function, and it is given a node, so that the edges of the
+        # problem can evaluate the state at it.
+        u = arguments["u"] = self.u
+        u_node = _graph.get_node(id(u))
+        if u_node is None:
+            u_node = graph.Node(u, name=u.name)
+            _graph.add_node(u_node)
 
         problem_node = LinearProblemNode(
             self,
@@ -63,11 +79,9 @@ class LinearProblem(LinearProblemBase):
             L,
             adjoint_petsc_options=adjoint_petsc_options,
             adjoint_petsc_options_prefix=adjoint_petsc_options_prefix,
-            **kwargs,
+            **arguments,
         )
         _graph.add_node(problem_node)
-
-        u_node = _graph.get_node(id(u))
 
         # Replace Trial Function in the form with the solution function to be able to track the dependencies of the solution function on the coefficients and constants in the form.
         # By definition, the trial function is always the second argument in the form, thus F_form.arguments()[1] is used to identify the trial function.
@@ -79,8 +93,18 @@ class LinearProblem(LinearProblemBase):
                 continue
             coefficient_node = _graph.get_node(id(coefficient))
             if not coefficient_node == None:
-                ctx = [F_form, u_node, coefficient, kwargs.get("bcs"), _graph]
-                coefficient_edge = NonlinearProblem_Coefficient_Edge(
+                # The graph is referenced weakly: it owns this edge, and the edge only
+                # needs it to look up the state after the solve, which does not exist yet.
+                adjoint_function = fem.Function(u.function_space, name="adjoint_rhs")
+                ctx = [
+                    F_form,
+                    u_node,
+                    coefficient,
+                    arguments.get("bcs"),
+                    weakref.ref(_graph),
+                    adjoint_function,
+                ]
+                coefficient_edge = Problem_Coefficient_Edge(
                     coefficient_node, problem_node, ctx=ctx
                 )
                 _graph.add_edge(coefficient_edge)
@@ -91,8 +115,23 @@ class LinearProblem(LinearProblemBase):
         for constant in F_form.constants():
             constant_node = _graph.get_node(id(constant))
             if not constant_node == None:
-                ctx = [F_form, u_node, constant, kwargs.get("bcs")]
-                constant_edge = NonlinearProblem_Constant_Edge(
+                R = fem.functionspace(
+                    constant.domain,
+                    real_element(
+                        constant.domain.basix_cell(), value_shape=constant.ufl_shape
+                    ),
+                )
+                function = fem.Function(R, dtype=constant.dtype)
+                adjoint_function = fem.Function(u.function_space, name="adjoint_rhs")
+                ctx = [
+                    F_form,
+                    u_node,
+                    constant,
+                    arguments.get("bcs"),
+                    function,
+                    adjoint_function,
+                ]
+                constant_edge = Problem_Constant_Edge(
                     constant_node, problem_node, ctx=ctx
                 )
                 _graph.add_edge(constant_edge)
@@ -100,26 +139,26 @@ class LinearProblem(LinearProblemBase):
                 constant_edge.set_next_functions(constant_node.get_gradFuncs())
 
         # Creating and adding edges to the graph if the boundary conditions are in the graph
-        if "bcs" in kwargs.keys() and not kwargs.get("bcs") == None:
-            for bc in kwargs.get("bcs"):
+        if arguments.get("bcs") is not None:
+            for bc in arguments.get("bcs"):
                 bc_node = _graph.get_node(id(bc))
                 if not bc_node == None:
-                    # For linear problems, dF/dbc is represented by the bilinear form a.
-                    ctx = [F_form, u_node, kwargs.get("bcs"), self._a]
-                    bc_edge = NonlinearProblem_Boundary_Edge(
-                        bc_node, problem_node, ctx=ctx
+                    adjoint_function = fem.Function(
+                        u.function_space, name="adjoint_rhs"
                     )
+                    ctx = [F_form, u_node, arguments.get("bcs"), adjoint_function]
+                    bc_edge = Problem_Boundary_Edge(bc_node, problem_node, ctx=ctx)
                     _graph.add_edge(bc_edge)
                     problem_node.append_gradFuncs(bc_edge)
                     bc_edge.set_next_functions(bc_node.get_gradFuncs())
 
     def solve(self, *args, **kwargs):
-        """OVERLOADS: :py:func:`dolfinx.fem.petsc.LinearProblem.solve`
+        """OVERLOADS: :py:meth:`dolfinx.fem.petsc.LinearProblem.solve`
         Solve linear problem into function u. Returns the number of iterations and if the solver converged.
 
         Args:
-            args: Arguments to :py:func:`dolfinx.fem.petsc.LinearProblem.solve`
-            kwargs: Keyword arguments to :py:func:`dolfinx.fem.petsc.LinearProblem.solve`
+            args: Arguments to :py:meth:`dolfinx.fem.petsc.LinearProblem.solve`
+            kwargs: Keyword arguments to :py:meth:`dolfinx.fem.petsc.LinearProblem.solve`
             graph (graph, optional): An additional keyword argument to specifier whether the assemble
                 operation should be added to the graph. If not present, the original functionality
                 of dolfinx is used without any additional functionalities.
@@ -160,12 +199,12 @@ class NonlinearProblem(NonlinearProblemBase):
     """
 
     def __init__(self, *args, **kwargs):
-        """OVERLOADS: :py:func:`dolfinx.fem.petsc.NonlinearProblem.__init__`.
+        """OVERLOADS: :py:class:`dolfinx.fem.petsc.NonlinearProblem`.
         Initialize solver for solving a non-linear problem using Newton's method
 
         Args:
-            args: Arguments to :py:func:`dolfinx.fem.petsc.NonlinearProblem.__init__`.
-            kwargs: Keyword arguments to :py:func:`dolfinx.fem.petsc.NonlinearProblem.__init__`.
+            args: Arguments to :py:class:`dolfinx.fem.petsc.NonlinearProblem`.
+            kwargs: Keyword arguments to :py:class:`dolfinx.fem.petsc.NonlinearProblem`.
             graph: An additional keyword argument to specifier whether the assemble
                 operation should be added to the graph. If not present, the original functionality
                 of dolfinx is used without any additional functionalities.
@@ -185,11 +224,27 @@ class NonlinearProblem(NonlinearProblemBase):
         if _graph is None:
             return
 
-        if adjoint_petsc_options_prefix is None:
-            adjoint_petsc_options_prefix = kwargs["petsc_options_prefix"] + "adjoint_"
+        arguments = bind_arguments(NonlinearProblemBase.__init__, self, *args, **kwargs)
+        del arguments["self"]
+        F_form = arguments.pop("F")
+        u = arguments.pop("u")
 
-        F_form = args[0]
-        u = args[1]
+        if not isinstance(F_form, ufl.Form):
+            raise NotImplementedError(
+                "A blocked problem cannot be recorded, since the graph tracks the single form its edges differentiate. Without the graph, the problem behaves exactly like the one of DOLFINx."
+            )
+
+        if adjoint_petsc_options_prefix is None:
+            adjoint_petsc_options_prefix = (
+                arguments["petsc_options_prefix"] + "adjoint_"
+            )
+
+        # The node of the solution lets the edges of the problem evaluate the state at
+        # it, also for a solution the caller never tracked.
+        u_node = _graph.get_node(id(u))
+        if u_node is None:
+            u_node = graph.Node(u, name=u.name)
+            _graph.add_node(u_node)
 
         problem_node = NonlinearProblemNode(
             self,
@@ -197,11 +252,9 @@ class NonlinearProblem(NonlinearProblemBase):
             u,
             adjoint_petsc_options=adjoint_petsc_options,
             adjoint_petsc_options_prefix=adjoint_petsc_options_prefix,
-            **kwargs,
+            **arguments,
         )
         _graph.add_node(problem_node)
-
-        u_node = _graph.get_node(id(u))
 
         # Creating and adding edges to the graph if the coefficients are in the graph
         for coefficient in F_form.coefficients():
@@ -209,8 +262,18 @@ class NonlinearProblem(NonlinearProblemBase):
                 continue
             coefficient_node = _graph.get_node(id(coefficient))
             if not coefficient_node == None:
-                ctx = [F_form, u_node, coefficient, kwargs.get("bcs"), _graph]
-                coefficient_edge = NonlinearProblem_Coefficient_Edge(
+                # The graph is referenced weakly: it owns this edge, and the edge only
+                # needs it to look up the state after the solve, which does not exist yet.
+                function = fem.Function(u.function_space, name="adjoint_rhs")
+                ctx = [
+                    F_form,
+                    u_node,
+                    coefficient,
+                    arguments.get("bcs"),
+                    weakref.ref(_graph),
+                    function,
+                ]
+                coefficient_edge = Problem_Coefficient_Edge(
                     coefficient_node, problem_node, ctx=ctx
                 )
                 _graph.add_edge(coefficient_edge)
@@ -221,8 +284,23 @@ class NonlinearProblem(NonlinearProblemBase):
         for constant in F_form.constants():
             constant_node = _graph.get_node(id(constant))
             if not constant_node == None:
-                ctx = [F_form, u_node, constant, kwargs.get("bcs")]
-                constant_edge = NonlinearProblem_Constant_Edge(
+                R = fem.functionspace(
+                    constant.domain,
+                    real_element(
+                        constant.domain.basix_cell(), value_shape=constant.ufl_shape
+                    ),
+                )
+                function = fem.Function(R, dtype=constant.dtype)
+                adjoint_function = fem.Function(u.function_space, name="adjoint_rhs")
+                ctx = [
+                    F_form,
+                    u_node,
+                    constant,
+                    arguments.get("bcs"),
+                    function,
+                    adjoint_function,
+                ]
+                constant_edge = Problem_Constant_Edge(
                     constant_node, problem_node, ctx=ctx
                 )
                 _graph.add_edge(constant_edge)
@@ -230,25 +308,26 @@ class NonlinearProblem(NonlinearProblemBase):
                 constant_edge.set_next_functions(constant_node.get_gradFuncs())
 
         # Creating and adding edges to the graph if the boundary conditions are in the graph
-        if "bcs" in kwargs.keys() and not kwargs.get("bcs") == None:
-            for bc in kwargs.get("bcs"):
+        if arguments.get("bcs") is not None:
+            for bc in arguments.get("bcs"):
                 bc_node = _graph.get_node(id(bc))
                 if not bc_node == None:
-                    ctx = [F_form, u_node, kwargs.get("bcs"), self._J]
-                    bc_edge = NonlinearProblem_Boundary_Edge(
-                        bc_node, problem_node, ctx=ctx
+                    adjoint_function = fem.Function(
+                        u.function_space, name="adjoint_rhs"
                     )
+                    ctx = [F_form, u_node, arguments.get("bcs"), adjoint_function]
+                    bc_edge = Problem_Boundary_Edge(bc_node, problem_node, ctx=ctx)
                     _graph.add_edge(bc_edge)
                     problem_node.append_gradFuncs(bc_edge)
                     bc_edge.set_next_functions(bc_node.get_gradFuncs())
 
     def solve(self, *args, **kwargs):
-        """OVERLOADS: :py:func:`dolfinx.fem.petsc.NonlinearProblem.solve`
+        """OVERLOADS: :py:meth:`dolfinx.fem.petsc.NonlinearProblem.solve`
         Solve non-linear problem into function u. Returns the number of iterations and if the solver converged.
 
         Args:
-            args: Arguments to :py:func:`dolfinx.fem.petsc.NonlinearProblem.solve`
-            kwargs: Keyword arguments to :py:func:`dolfinx.fem.petsc.NonlinearProblem.solve`
+            args: Arguments to :py:meth:`dolfinx.fem.petsc.NonlinearProblem.solve`
+            kwargs: Keyword arguments to :py:meth:`dolfinx.fem.petsc.NonlinearProblem.solve`
             graph (graph, optional): An additional keyword argument to specifier whether the assemble
                 operation should be added to the graph. If not present, the original functionality
                 of dolfinx is used without any additional functionalities.
@@ -319,12 +398,30 @@ class LinearProblemNode(graph.AbstractNode):
         self.adjoint_petsc_options = adjoint_petsc_options
         self.adjoint_petsc_options_prefix = adjoint_petsc_options_prefix
 
+    @property
+    def adjoint_form_kwargs(self) -> dict:
+        """The arguments the forms of the adjoint equations are compiled with.
+
+        These are the recorded arguments that :py:func:`dolfinx.fem.form` accepts, read
+        from its signature rather than carried by name. A derivative of the problem spans
+        the meshes its forms span and is integrated the way they are, so compiling it
+        without them is a different compilation.
+
+        Returns:
+            The recorded arguments of the compilation.
+
+        """
+        import inspect
+
+        parameters = inspect.signature(fem.form).parameters
+        return {key: value for key, value in self.kwargs.items() if key in parameters}
+
     def __call__(self):
         """
         The initialization of the LinearProblem object.
 
         """
-        output = LinearProblemBase(self.a, self.L, **self.kwargs)
+        output = LinearProblemBase(a=self.a, L=self.L, **self.kwargs)
         self.object = output
         return output
 
@@ -367,12 +464,30 @@ class NonlinearProblemNode(graph.AbstractNode):
         self.adjoint_petsc_options = adjoint_petsc_options
         self.adjoint_petsc_options_prefix = adjoint_petsc_options_prefix
 
+    @property
+    def adjoint_form_kwargs(self) -> dict:
+        """The arguments the forms of the adjoint equations are compiled with.
+
+        These are the recorded arguments that :py:func:`dolfinx.fem.form` accepts, read
+        from its signature rather than carried by name. A derivative of the problem spans
+        the meshes its forms span and is integrated the way they are, so compiling it
+        without them is a different compilation.
+
+        Returns:
+            The recorded arguments of the compilation.
+
+        """
+        import inspect
+
+        parameters = inspect.signature(fem.form).parameters
+        return {key: value for key, value in self.kwargs.items() if key in parameters}
+
     def __call__(self):
         """
         The initialization of the NonlinearProblem object.
 
         """
-        output = NonlinearProblemBase(self.F, self.u, **self.kwargs)
+        output = NonlinearProblemBase(F=self.F, u=self.u, **self.kwargs)
         self.object = output
         return output
 
@@ -410,15 +525,15 @@ class SolveNode(graph.Node):
         self.problemNode.object.solve()
 
 
-class NonlinearProblem_Coefficient_Edge(graph.Edge):
+class Problem_Coefficient_Edge(graph.Edge):
     """
-    Edge providing the adjoint equation for the derivative of the solution to the nonlinear problem with respect to the coefficient.
+    Edge providing the adjoint equation for the derivative of the solution to a linear or nonlinear problem with respect to the coefficient.
 
     """
 
     def calculate_adjoint(self):
         """
-        The method provides the adjoint equation for the derivative of the solution to the nonlinear problem with respect to the coefficient.
+        The method provides the adjoint equation for the derivative of the solution to a linear or nonlinear problem with respect to the coefficient.
 
         By taking the derivative of F(u) = 0 with respect to a coefficient f, we obtain a representation of du/df:
             dF/df = ∂F/∂u * du/df + ∂F/∂f = 0
@@ -437,12 +552,12 @@ class NonlinearProblem_Coefficient_Edge(graph.Edge):
 
         """
         # Extract variables from contextvariable ctx
-        F, u_node, m, bcs, _graph = self.ctx
+        F, u_node, m, bcs, graph_ref, adjoint_function = self.ctx
 
         m_node = self.predecessor
 
         u = u_node.get_object()
-        u_next = _graph.get_node(u_node.id, version=u_node.version + 1)
+        u_next = graph_ref().get_node(u_node.id, version=u_node.version + 1)
 
         # Construct the transpose of the Jacobian J = ∂F/∂u
         V = u.function_space
@@ -454,15 +569,19 @@ class NonlinearProblem_Coefficient_Edge(graph.Edge):
         adjoint_solution = AdjointProblem(
             J_adjoint,
             -self.input_value,
-            fem.Function(V),
+            adjoint_function,
             bcs=bcs,
             petsc_options=self.successor.adjoint_petsc_options,
             petsc_options_prefix=self.successor.adjoint_petsc_options_prefix,
+            **self.successor.adjoint_form_kwargs,
         ).solve()
 
         # Calculate ∂F/∂m
         dFdm = fem.petsc.assemble_matrix(
-            fem.form(ufl.derivative(F_manipulated, m_node.data))
+            fem.form(
+                ufl.derivative(F_manipulated, m_node.data),
+                **self.successor.adjoint_form_kwargs,
+            )
         )
         dFdm.assemble()
 
@@ -473,15 +592,15 @@ class NonlinearProblem_Coefficient_Edge(graph.Edge):
         return gradient
 
 
-class NonlinearProblem_Constant_Edge(graph.Edge):
+class Problem_Constant_Edge(graph.Edge):
     """
-    Edge providing the adjoint equation for the derivative of the solution to the nonlinear problem with respect to the constant.
+    Edge providing the adjoint equation for the derivative of the solution to a linear or nonlinear problem with respect to the constant.
 
     """
 
     def calculate_adjoint(self):
         """
-        The method provides the adjoint equation for the derivative of the solution to the nonlinear problem with respect to the constant.
+        The method provides the adjoint equation for the derivative of the solution to a linear or nonlinear problem with respect to the constant.
 
         By taking the derivative of F(u) = 0 with respect to a constant c, we obtain a representation of du/dc:
             dF/dc = ∂F/∂u * du/dc + ∂F/∂c = 0
@@ -494,12 +613,12 @@ class NonlinearProblem_Constant_Edge(graph.Edge):
             λᵀ * ∂F/∂c
 
         Returns:
-            (PETSc.Vec): The accumulated gradient up to this point in the computational graph.
+            float or complex or PETSc.Vec: The accumulated gradient up to this point in the computational graph.
 
         """
 
         # Extract variables from contextvariable ctx
-        F, u_node, m, bcs = self.ctx
+        F, u_node, m, bcs, function, adjoint_function = self.ctx
 
         u = u_node.get_object()
 
@@ -512,38 +631,41 @@ class NonlinearProblem_Constant_Edge(graph.Edge):
         adjoint_solution = AdjointProblem(
             J_adjoint,
             -self.input_value,
-            fem.Function(V),
+            adjoint_function,
             bcs=bcs,
             petsc_options=self.successor.adjoint_petsc_options,
             petsc_options_prefix=self.successor.adjoint_petsc_options_prefix,
+            **self.successor.adjoint_form_kwargs,
         ).solve()
 
-        # Create a function based on the constant in order to use ufl.derivative
-        # to calculate ∂F/∂m
-        domain = m.domain
-        DG0 = fem.functionspace(domain, ("DG", 0))
-        function = fem.Function(DG0)
-        function.x.array[:] = m.c
         replaced_form = ufl.replace(F, {m: function})
-        dFdm = fem.petsc.assemble_vector(
-            fem.form(ufl.derivative(replaced_form, function))
+        derivative = ufl.derivative(replaced_form, function)
+        derivative = ufl.replace(derivative, {function: m})
+
+        sensitivity = ufl.action(ufl.adjoint(derivative), adjoint_solution)
+        gradient = fem.petsc.assemble_vector(
+            fem.form(sensitivity, **self.successor.adjoint_form_kwargs)
         )
+        gradient.ghostUpdate(addv=PETSc.InsertMode.ADD, mode=PETSc.ScatterMode.REVERSE)
 
-        dFdm.ghostUpdate(addv=PETSc.InsertMode.ADD, mode=PETSc.ScatterMode.REVERSE)
+        # Shape preserves the distinction between a scalar and a one-component vector.
+        if not m.ufl_shape:
+            try:
+                return gradient.sum()
+            finally:
+                gradient.destroy()
+        return gradient
 
-        # Calculate λᵀ * ∂F/∂m
-        return adjoint_solution.x.petsc_vec.dot(dFdm)
 
-
-class NonlinearProblem_Boundary_Edge(graph.Edge):
+class Problem_Boundary_Edge(graph.Edge):
     """
-    Edge providing the adjoint equation for the derivative of the solution to the nonlinear problem with respect to the boundary condition.
+    Edge providing the adjoint equation for the derivative of the solution to a linear or nonlinear problem with respect to the boundary condition.
 
     """
 
     def calculate_adjoint(self):
         """
-        The method provides the adjoint equation for the derivative of the solution to the nonlinear problem with respect to the boundary condition.
+        The method provides the adjoint equation for the derivative of the solution to a linear or nonlinear problem with respect to the boundary condition.
 
         By taking the derivative of F(u) = 0 with respect to a boundary condition g, we obtain a representation of du/dg:
             dF/dg = ∂F/∂u * du/dg + ∂F/∂g = 0
@@ -559,7 +681,10 @@ class NonlinearProblem_Boundary_Edge(graph.Edge):
         homogenises its right-hand side on the constrained dofs Γ. The term x accounts for the
         constrained dofs themselves, where u_Γ = g holds exactly. The full vector x is added, as
         the restriction to the controlled dofs is applied by
-        :py:class:`dolfinx_adjoint.fem.bcs.DirichletBC_Edge`.
+        :py:class:`dolfinx_adjoint.fem.bcs.DirichletBC_Function_Edge`.
+
+        ∂F/∂g is the Jacobian of the residual, which is derived here rather than taken
+        from the problem.
 
         Returns:
             (PETSc.Vec): The accumulated gradient up to this point in the computational graph.
@@ -568,7 +693,7 @@ class NonlinearProblem_Boundary_Edge(graph.Edge):
         """
 
         # Extract variables from contextvariable ctx
-        F, u_node, bcs, dFdbc_form = self.ctx
+        F, u_node, bcs, adjoint_function = self.ctx
 
         u = u_node.get_object()
 
@@ -585,18 +710,20 @@ class NonlinearProblem_Boundary_Edge(graph.Edge):
         adjoint_solution = AdjointProblem(
             J_adjoint,
             -self.input_value,
-            fem.Function(V),
+            adjoint_function,
             bcs=bcs,
             petsc_options=self.successor.adjoint_petsc_options,
             petsc_options_prefix=self.successor.adjoint_petsc_options_prefix,
+            **self.successor.adjoint_form_kwargs,
         ).solve()
 
-        # ∂F/∂m = dFdbc defined in the nonlinear problem as a fem.Form
-        dFdbc = fem.petsc.assemble_matrix(dFdbc_form)
-        dFdbc.assemble()
-
-        # λᵀ * ∂F/∂g, the contribution of the lifting of the linear form
-        gradient = dFdbc.transpose() * adjoint_solution.x.petsc_vec
+        gradient = fem.petsc.assemble_vector(
+            fem.form(
+                ufl.action(J_adjoint, adjoint_solution),
+                **self.successor.adjoint_form_kwargs,
+            )
+        )
+        gradient.ghostUpdate(addv=PETSc.InsertMode.ADD, mode=PETSc.ScatterMode.REVERSE)
 
         # x, the direct contribution of the constrained dofs, where u = g holds exactly
         gradient.axpy(1.0, direct_contribution)
@@ -619,6 +746,7 @@ class AdjointProblem(LinearProblemBase):
         bcs=None,
         petsc_options: dict | None = None,
         petsc_options_prefix: str | None = None,
+        **kwargs,
     ):
         """Initialize the adjoint problem.
 
@@ -630,7 +758,15 @@ class AdjointProblem(LinearProblemBase):
             petsc_options: Options configuring the adjoint KSP.
             petsc_options_prefix: Solver options prefix, defaulting to
                 ``dolfinx_adjoint_``.
+            kwargs: The arguments of :py:class:`dolfinx.fem.petsc.LinearProblem` the
+                forms of the adjoint equation are compiled with, which are the ones the
+                problem it belongs to was set up with.
+
+        Note:
+            The solver of the adjoint equation is configured through ``adjoint_petsc_options`` instead.
+
         """
+
         if petsc_options_prefix is None:
             petsc_options_prefix = "dolfinx_adjoint_"
 
@@ -641,6 +777,7 @@ class AdjointProblem(LinearProblemBase):
             u=u,
             bcs=bcs,
             petsc_options_prefix=petsc_options_prefix,
+            **kwargs,
         )
         b.copy(self.b)
 

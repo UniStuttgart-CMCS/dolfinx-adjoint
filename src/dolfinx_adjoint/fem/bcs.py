@@ -1,7 +1,9 @@
 import numpy as np
+from basix.ufl import real_element
 from dolfinx import fem
 
 import dolfinx_adjoint.graph as graph
+from dolfinx_adjoint.utils import bind_arguments
 
 
 def dirichletbc(*args, **kwargs):
@@ -11,6 +13,11 @@ def dirichletbc(*args, **kwargs):
     The overloaded function adds the functionality to keep track of the dependencies
     in the computational graph. The original functionality is kept.
 
+    The boundary condition carries the gradient of the value defining it, so a value
+    that is not part of the graph leaves nothing to record and the boundary condition
+    behaves like the one of DOLFINx. A value DOLFINx creates itself, from an array or a
+    scalar, is never part of the graph, since the caller does not hold it.
+
     Args:
         args: Arguments to :py:func:`dolfinx.fem.dirichletbc`.
         kwargs: Keyword arguments to :py:func:`dolfinx.fem.dirichletbc`.
@@ -19,9 +26,17 @@ def dirichletbc(*args, **kwargs):
             of dolfinx is used without any additional functionalities.
 
     """
+
     _graph = kwargs.pop("graph", None)
     output = fem.dirichletbc(*args, **kwargs)
     if _graph is None:
+        return output
+
+    arguments = bind_arguments(fem.dirichletbc, *args, **kwargs)
+    value = arguments["value"]
+
+    value_node = _graph.get_node(id(value))
+    if value_node is None:
         return output
 
     # Creating and adding node to graph
@@ -35,16 +50,25 @@ def dirichletbc(*args, **kwargs):
     # collapsed space, in which case the indices are the ones of the sub space.
     dofs, num_owned = output.dof_indices()
 
-    dofs_arg = args[1] if len(args) > 1 else kwargs["dofs"]
-    value_dofs = dofs_arg[1] if np.ndim(dofs_arg) == 2 else dofs
+    if isinstance(value, fem.Function):
+        value_dofs = arguments["dofs"][1] if np.ndim(arguments["dofs"]) == 2 else dofs
+        ctx = [dofs[:num_owned], value_dofs[:num_owned], value.x.petsc_vec]
+        dirichletbc_edge = DirichletBC_Function_Edge(
+            value_node, dirichletbc_node, ctx=ctx
+        )
+    else:
+        R = fem.functionspace(
+            value.domain,
+            real_element(value.domain.basix_cell(), value_shape=value.ufl_shape),
+        )
+        interpolation = fem.petsc.interpolation_matrix(R, arguments["V"])
+        interpolation.assemble()
+        input_cache = interpolation.createVecLeft()
+        ctx = [dofs[:num_owned], value, interpolation, input_cache]
+        dirichletbc_edge = DirichletBC_Constant_Edge(
+            value_node, dirichletbc_node, ctx=ctx
+        )
 
-    value = args[0]
-    template = value.x.petsc_vec if isinstance(value, fem.Function) else value.value
-    ctx = [dofs[:num_owned], value_dofs[:num_owned], template]
-
-    # Creating the edge between the DirichletBC and the function defining the value of the BC
-    value_node = _graph.get_node(id(args[0]))
-    dirichletbc_edge = DirichletBC_Edge(value_node, dirichletbc_node, ctx=ctx)
     dirichletbc_edge.set_next_functions(value_node.get_gradFuncs())
     dirichletbc_node.set_gradFuncs([dirichletbc_edge])
     _graph.add_edge(dirichletbc_edge)
@@ -52,7 +76,7 @@ def dirichletbc(*args, **kwargs):
     return output
 
 
-class DirichletBC_Edge(graph.Edge):
+class DirichletBC_Function_Edge(graph.Edge):
     """
     Edge providing the adjoint equation for the derivative of the DirichletBC to the function defining the value of the BC.
 
@@ -79,4 +103,39 @@ class DirichletBC_Edge(graph.Edge):
         gradient.zeroEntries()
         gradient.array_w[value_dofs] = values[dofs]
 
+        return gradient
+
+
+class DirichletBC_Constant_Edge(graph.Edge):
+    """
+    Edge providing the adjoint equation for the derivative of the DirichletBC to the constant defining the value of the BC.
+
+    """
+
+    def calculate_adjoint(self):
+        """
+        The method provides the adjoint equation for the derivative of the DirichletBC to the constant defining the value of the BC.
+
+        The cached DOLFINx interpolation matrix supplies the component mapping.
+        Its PETSc transpose product accumulates contributions across mesh ranks; masking only owned entries avoids counting ghost sensitivities twice.
+
+        Returns:
+            float or complex or PETSc.Vec: The accumulated gradient up to this point in the computational
+            graph, which the contributions of the same constant from the forms it appears in are accumulated with.
+        """
+
+        owned_boundary_dofs, constant, interpolation, input_cache = self.ctx
+        input_cache.zeroEntries()
+        input_cache.array_w[owned_boundary_dofs] = self.input_value.array_r[
+            owned_boundary_dofs
+        ]
+        gradient = interpolation.createVecRight()
+        interpolation.multTranspose(input_cache, gradient)
+
+        # A one-component vector still has a vector-valued gradient.
+        if not constant.ufl_shape:
+            try:
+                return gradient.sum()
+            finally:
+                gradient.destroy()
         return gradient

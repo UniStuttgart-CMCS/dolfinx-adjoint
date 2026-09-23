@@ -1,10 +1,11 @@
 from dolfinx import fem, la
 
 import dolfinx_adjoint.graph as graph
+from dolfinx_adjoint.utils import bind_arguments
 
 
 class Function(fem.Function):
-    """OVERLOADS: :py:class:`dolfinx.fem.function.Function`
+    """OVERLOADS: :py:class:`dolfinx.fem.Function`
     Initialize a finite element Function.
 
     The overloaded class modifies the initialization of the Function to keep track of the dependencies
@@ -16,12 +17,12 @@ class Function(fem.Function):
     """
 
     def __init__(self, *args, **kwargs):
-        """OVERLOADS: :py:func:`dolfinx.fem.function.Function.__init__`
+        """OVERLOADS: :py:class:`dolfinx.fem.Function`
         Initialize a finite element Function.
 
         Args:
-            args: Arguments to :py:func:`dolfinx.fem.function.Function.__init__`
-            kwargs: Keyword arguments to :py:func:`dolfinx.fem.function.Function.__init__`
+            args: Arguments to :py:class:`dolfinx.fem.Function`
+            kwargs: Keyword arguments to :py:class:`dolfinx.fem.Function`
             graph (graph, optional): An additional keyword argument to specifier whether the assemble
                 operation should be added to the graph. If not present, the original functionality
                 of dolfinx is used without any additional functionalities.
@@ -34,8 +35,6 @@ class Function(fem.Function):
         """
         _graph = kwargs.pop("graph", None)
         map = kwargs.pop("map", None)
-        if not "name" in kwargs:
-            kwargs["name"] = "f"
 
         super().__init__(*args, **kwargs)
         if _graph is None:
@@ -89,6 +88,10 @@ class Function(fem.Function):
                 of dolfinx is used without any additional functionalities.
             version (int, optional): An additional keyword argument to specify the version of the operation in the graph. If not present, the version is set to 0.
 
+        Note:
+            The node is added in any case, since it is the version of this function the
+            subsequent operations depend on.
+
         """
         self.x.array[:] = function.x.array[:]
 
@@ -97,10 +100,14 @@ class Function(fem.Function):
         if _graph is None:
             return
 
+        function_node = _graph.get_node(id(function))
+
         assign_node = graph.Node(self, name=self.name, version=version)
         _graph.add_node(assign_node)
 
-        function_node = _graph.get_node(id(function))
+        if function_node is None:
+            return
+
         assign_edge = graph.Edge(function_node, assign_node)
         assign_node.set_gradFuncs([assign_edge])
         _graph.add_edge(assign_edge)
@@ -108,7 +115,7 @@ class Function(fem.Function):
 
 
 class Constant(fem.Constant):
-    """OVERLOADS: :py:class:`dolfinx.fem.constant.Constant`
+    """OVERLOADS: :py:class:`dolfinx.fem.Constant`
     Initialize a constant function.
 
     The overloaded class modifies the initialization of the Constant to keep track of the dependencies
@@ -117,12 +124,12 @@ class Constant(fem.Constant):
     """
 
     def __init__(self, *args, **kwargs):
-        """OVERLOADS: :py:func:`dolfinx.fem.constant.Constant.__init__`
+        """OVERLOADS: :py:class:`dolfinx.fem.Constant`
         Initialize a constant function.
 
         Args:
-            args: Arguments to :py:func:`dolfinx.fem.constant.Constant.__init__`
-            kwargs: Keyword arguments to :py:func:`dolfinx.fem.constant.Constant.__init__`
+            args: Arguments to :py:class:`dolfinx.fem.Constant`
+            kwargs: Keyword arguments to :py:class:`dolfinx.fem.Constant`
             graph (graph, optional): An additional keyword argument to specifier whether the assemble
                 operation should be added to the graph. If not present, the original functionality
                 of dolfinx is used without any additional functionalities.
@@ -138,5 +145,5 @@ class Constant(fem.Constant):
 
         Constant_node = graph.Node(self, name=name)
         _graph.add_node(Constant_node)
-        self.domain = args[0]
-        self.c = args[1]
+        arguments = bind_arguments(fem.Constant.__init__, self, *args, **kwargs)
+        self.domain = arguments["domain"]

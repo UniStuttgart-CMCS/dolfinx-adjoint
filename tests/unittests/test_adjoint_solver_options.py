@@ -60,7 +60,7 @@ def adjoint_edge(request, option) -> Edge:
 
     edge.input_value = create_vector(V)
 
-    return edge
+    yield edge
 
 
 @pytest.fixture

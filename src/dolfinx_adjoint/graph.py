@@ -64,6 +64,11 @@ class Graph:
         Raises:
             ValueError: If an edge already connects the predecessor to the successor
 
+        Note:
+            Both nodes of the edge have to be part of the graph, since the graph is what
+            keeps them alive: an edge references its successor weakly, so that the graph
+            stays free of reference cycles.
+
         """
         if self.get_edge(edge.predecessor, edge.successor) is not None:
             raise ValueError(
@@ -231,8 +236,6 @@ class Graph:
             return self._nx_graph
 
     def visualise(self, filename="graph.pdf", style="planar", print_edge_labels=True):
-        import matplotlib.pyplot as plt
-
         """Visualise the graph
 
         Args:
@@ -241,6 +244,8 @@ class Graph:
             print_edge_labels (bool, optional): Whether to print the edge labels. Defaults to True.
 
         """
+        import matplotlib.pyplot as plt
+
         plt.figure(figsize=(10, 8))
         nx_graph = self.to_networkx()
         labels = nx.get_node_attributes(nx_graph, "name")
@@ -329,6 +334,7 @@ class Graph:
                 the function does not depend on the variable
             TypeError: If the variable does not represent a numerical value and can
                 therefore not store a gradient
+            RuntimeError: If the graph contains a cycle and is therefore no longer a DAG
 
         Note:
             The gradients are reset and the marks are refreshed on every call. The result is
@@ -350,6 +356,11 @@ class Graph:
         if function_node is None:
             raise ValueError(
                 f"The function with id {function_id} is not part of the graph."
+            )
+
+        if not nx.is_directed_acyclic_graph(self._get_networkx_graph()):
+            raise RuntimeError(
+                "The graph contains a cycle and is therefore no longer a DAG."
             )
 
         if variable_id is not None:

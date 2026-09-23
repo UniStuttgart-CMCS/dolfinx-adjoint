@@ -7,7 +7,8 @@ components rather than a single entry of the gradient.
 """
 
 import numpy as np
-from dolfinx import fem
+import pytest
+from dolfinx import fem, mesh
 from mpi4py import MPI
 
 
@@ -20,6 +21,9 @@ def _convergence_rates(errors: np.ndarray, steps: np.ndarray) -> list:
     return rates
 
 
+@pytest.mark.parametrize(
+    "unit_square_mesh", [mesh.CellType.triangle], indirect=True, ids=["triangle"]
+)
 def test_plane_elasticity_taylor_bc(plane_elasticity_problem):
     """Taylor test for J with respect to the controlled boundary condition."""
     graph_ = plane_elasticity_problem["graph_"]

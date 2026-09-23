@@ -24,8 +24,95 @@ from dolfinx_adjoint import Graph, fem
     params=[mesh.CellType.triangle, mesh.CellType.quadrilateral],
     ids=["triangle", "quadrilateral"],
 )
-def cell_type(request):
-    return request.param
+def unit_square_mesh(request) -> mesh.Mesh:
+    """Create a 64-by-64 unit-square mesh per cell type and test module."""
+    return mesh.create_unit_square(MPI.COMM_WORLD, 64, 64, request.param)
+
+
+@pytest.fixture(scope="module")
+def beam_mesh() -> tuple[mesh.Mesh, float, float]:
+    """Create the beam mesh and return it with its length and width."""
+    L = 1
+    W = 0.1
+    domain = mesh.create_box(
+        MPI.COMM_WORLD,
+        [np.array([0, 0, 0]), np.array([L, W, W])],
+        [30, 10, 10],
+        cell_type=mesh.CellType.hexahedron,
+    )
+    return domain, L, W
+
+
+@pytest.fixture(scope="module")
+def dfg_2d_mesh() -> tuple[gmshio.MeshData, float]:
+    """Create the tagged DFG 2D cylinder geometry and return its channel height."""
+
+    # Mesh parameters
+    gmsh.initialize()
+    L = 2.2
+    H = 0.41
+    c_x = 0.2
+    c_y = 0.2
+    r = 0.05
+    gdim = 2
+    mesh_comm = MPI.COMM_WORLD
+    model_rank = 0
+
+    fluid_marker = 1
+    inlet_marker, outlet_marker, wall_marker, obstacle_marker = 2, 3, 4, 5
+    inflow, outflow, walls, obstacle = [], [], [], []
+
+    # Mesh generation
+    if mesh_comm.rank == model_rank:
+        rectangle = gmsh.model.occ.addRectangle(0, 0, 0, L, H, tag=1)
+        circle = gmsh.model.occ.addDisk(c_x, c_y, 0, r, r)
+        fluid = gmsh.model.occ.cut([(gdim, rectangle)], [(gdim, circle)])
+        gmsh.model.occ.synchronize()
+
+        volumes = gmsh.model.getEntities(dim=gdim)
+        assert len(volumes) == 1
+        gmsh.model.addPhysicalGroup(volumes[0][0], [volumes[0][1]], fluid_marker)
+        gmsh.model.setPhysicalName(volumes[0][0], fluid_marker, "Fluid")
+
+        boundaries = gmsh.model.getBoundary(volumes, oriented=False)
+        for boundary in boundaries:
+            center_of_mass = gmsh.model.occ.getCenterOfMass(boundary[0], boundary[1])
+            if np.allclose(center_of_mass, [0, H / 2, 0]):
+                inflow.append(boundary[1])
+            elif np.allclose(center_of_mass, [L, H / 2, 0]):
+                outflow.append(boundary[1])
+            elif np.allclose(center_of_mass, [L / 2, H, 0]) or np.allclose(
+                center_of_mass, [L / 2, 0, 0]
+            ):
+                walls.append(boundary[1])
+            else:
+                obstacle.append(boundary[1])
+        gmsh.model.addPhysicalGroup(1, walls, wall_marker)
+        gmsh.model.setPhysicalName(1, wall_marker, "Walls")
+        gmsh.model.addPhysicalGroup(1, inflow, inlet_marker)
+        gmsh.model.setPhysicalName(1, inlet_marker, "Inlet")
+        gmsh.model.addPhysicalGroup(1, outflow, outlet_marker)
+        gmsh.model.setPhysicalName(1, outlet_marker, "Outlet")
+        gmsh.model.addPhysicalGroup(1, obstacle, obstacle_marker)
+        gmsh.model.setPhysicalName(1, obstacle_marker, "Obstacle")
+
+        gmsh.model.mesh.field.add("Distance", 1)
+        gmsh.model.mesh.field.setNumbers(1, "EdgesList", obstacle)
+        gmsh.model.mesh.field.add("Threshold", 2)
+        gmsh.model.mesh.field.setNumber(2, "IField", 1)
+        gmsh.model.mesh.field.setNumber(2, "LcMin", 0.01)
+        gmsh.model.mesh.field.setNumber(2, "LcMax", 0.04)
+        gmsh.model.mesh.field.setNumber(2, "DistMin", 0)
+        gmsh.model.mesh.field.setNumber(2, "DistMax", H)
+        gmsh.model.mesh.field.add("Min", 5)
+        gmsh.model.mesh.field.setNumbers(5, "FieldsList", [2])
+        gmsh.model.mesh.field.setAsBackgroundMesh(5)
+        gmsh.model.mesh.generate(2)
+
+    mesh_data = gmshio.model_to_mesh(gmsh.model, mesh_comm, model_rank, gdim=gdim)
+    mesh_data.facet_tags.name = "Facet markers"
+    gmsh.finalize()
+    return mesh_data, H
 
 
 @pytest.fixture(
@@ -47,14 +134,13 @@ def boundary_condition(request):
 
 
 @pytest.fixture(scope="module")
-def poisson_problem(cell_type, solver: bool, boundary_condition):
+def poisson_problem(unit_square_mesh, solver: bool, boundary_condition):
     """Set up the Poisson problem that will be used in all tests."""
 
     # Create graph object to store the computational graph
     graph_ = Graph()
 
-    print(f"Testing with cell type: {cell_type}")
-    domain = mesh.create_unit_square(MPI.COMM_WORLD, 64, 64, cell_type)
+    domain = unit_square_mesh
     V = fem.functionspace(domain, ("Lagrange", 1))
     W = fem.functionspace(domain, ("DG", 0))
 
@@ -191,12 +277,12 @@ def poisson_problem(cell_type, solver: bool, boundary_condition):
 
 
 @pytest.fixture(scope="module")
-def plane_elasticity_problem():
+def plane_elasticity_problem(unit_square_mesh):
     """Set up a plane elasticity problem with a controlled Dirichlet boundary."""
 
     graph_ = Graph()
 
-    domain = mesh.create_unit_square(MPI.COMM_WORLD, 64, 64, mesh.CellType.triangle)
+    domain = unit_square_mesh
     V = fem.functionspace(domain, ("Lagrange", 1, (domain.geometry.dim,)))
 
     mu = fem.Constant(domain, ScalarType(1.0), name="μ")
@@ -267,25 +353,18 @@ def plane_elasticity_problem():
 
 
 @pytest.fixture(scope="module")
-def linear_elasticity_problem():
+def linear_elasticity_problem(beam_mesh):
     """Set up the linear elasticity problem that will be used in all tests."""
 
+    domain, L, W = beam_mesh
+
     # Scaled variable
-    L = 1
-    W = 0.1
     rho = 1
     delta = W / L
     gamma = 0.4 * delta**2
     g = gamma
 
     graph_ = Graph()
-
-    domain = mesh.create_box(
-        MPI.COMM_WORLD,
-        [np.array([0, 0, 0]), np.array([L, W, W])],
-        [30, 10, 10],
-        cell_type=mesh.CellType.hexahedron,
-    )
 
     vector_element = element("Lagrange", domain.basix_cell(), 1, shape=(3,))
     V = fem.functionspace(domain, vector_element)
@@ -361,75 +440,16 @@ def linear_elasticity_problem():
 
 
 @pytest.fixture(scope="module")
-def stokes_problem():
+def stokes_problem(dfg_2d_mesh):
     """Set up the Stokes problem that will be used in all tests."""
 
-    # Mesh parameters
-    gmsh.initialize()
-    L = 2.2
-    H = 0.41
-    c_x = 0.2
-    c_y = 0.2
-    r = 0.05
-    gdim = 2
-    mesh_comm = MPI.COMM_WORLD
-    model_rank = 0
-
-    fluid_marker = 1
-    inlet_marker, outlet_marker, wall_marker, obstacle_marker = 2, 3, 4, 5
-    inflow, outflow, walls, obstacle = [], [], [], []
-
-    # Mesh generation
-    if mesh_comm.rank == model_rank:
-        rectangle = gmsh.model.occ.addRectangle(0, 0, 0, L, H, tag=1)
-        circle = gmsh.model.occ.addDisk(c_x, c_y, 0, r, r)
-        fluid = gmsh.model.occ.cut([(gdim, rectangle)], [(gdim, circle)])
-        gmsh.model.occ.synchronize()
-
-        volumes = gmsh.model.getEntities(dim=gdim)
-        assert len(volumes) == 1
-        gmsh.model.addPhysicalGroup(volumes[0][0], [volumes[0][1]], fluid_marker)
-        gmsh.model.setPhysicalName(volumes[0][0], fluid_marker, "Fluid")
-
-        boundaries = gmsh.model.getBoundary(volumes, oriented=False)
-        for boundary in boundaries:
-            center_of_mass = gmsh.model.occ.getCenterOfMass(boundary[0], boundary[1])
-            if np.allclose(center_of_mass, [0, H / 2, 0]):
-                inflow.append(boundary[1])
-            elif np.allclose(center_of_mass, [L, H / 2, 0]):
-                outflow.append(boundary[1])
-            elif np.allclose(center_of_mass, [L / 2, H, 0]) or np.allclose(
-                center_of_mass, [L / 2, 0, 0]
-            ):
-                walls.append(boundary[1])
-            else:
-                obstacle.append(boundary[1])
-        gmsh.model.addPhysicalGroup(1, walls, wall_marker)
-        gmsh.model.setPhysicalName(1, wall_marker, "Walls")
-        gmsh.model.addPhysicalGroup(1, inflow, inlet_marker)
-        gmsh.model.setPhysicalName(1, inlet_marker, "Inlet")
-        gmsh.model.addPhysicalGroup(1, outflow, outlet_marker)
-        gmsh.model.setPhysicalName(1, outlet_marker, "Outlet")
-        gmsh.model.addPhysicalGroup(1, obstacle, obstacle_marker)
-        gmsh.model.setPhysicalName(1, obstacle_marker, "Obstacle")
-
-        gmsh.model.mesh.field.add("Distance", 1)
-        gmsh.model.mesh.field.setNumbers(1, "EdgesList", obstacle)
-        gmsh.model.mesh.field.add("Threshold", 2)
-        gmsh.model.mesh.field.setNumber(2, "IField", 1)
-        gmsh.model.mesh.field.setNumber(2, "LcMin", 0.01)
-        gmsh.model.mesh.field.setNumber(2, "LcMax", 0.04)
-        gmsh.model.mesh.field.setNumber(2, "DistMin", 0)
-        gmsh.model.mesh.field.setNumber(2, "DistMax", H)
-        gmsh.model.mesh.field.add("Min", 5)
-        gmsh.model.mesh.field.setNumbers(5, "FieldsList", [2])
-        gmsh.model.mesh.field.setAsBackgroundMesh(5)
-        gmsh.model.mesh.generate(2)
-
-    mesh_data = gmshio.model_to_mesh(gmsh.model, mesh_comm, model_rank, gdim=gdim)
+    mesh_data, H = dfg_2d_mesh
     mesh = mesh_data.mesh
     ft = mesh_data.facet_tags
-    ft.name = "Facet markers"
+    inlet_marker = mesh_data.physical_groups["Inlet"].tag
+    outlet_marker = mesh_data.physical_groups["Outlet"].tag
+    wall_marker = mesh_data.physical_groups["Walls"].tag
+    obstacle_marker = mesh_data.physical_groups["Obstacle"].tag
 
     graph_ = Graph()
 
@@ -540,8 +560,6 @@ def stokes_problem():
 
     J = fem.assemble_scalar(fem.form(J_form, graph=graph_), graph=graph_)
 
-    gmsh.finalize()
-
     return {
         "graph_": graph_,
         "mesh": mesh,
@@ -560,10 +578,10 @@ def stokes_problem():
 
 
 @pytest.fixture(scope="module")
-def heat_equation_problem():
+def heat_equation_problem(unit_square_mesh):
     """Set up the heat equation problem that will be used in all tests."""
 
-    domain = mesh.create_unit_square(MPI.COMM_WORLD, 32, 32, mesh.CellType.triangle)
+    domain = unit_square_mesh
     V = fem.functionspace(domain, ("Lagrange", 1))
 
     dt = 0.01

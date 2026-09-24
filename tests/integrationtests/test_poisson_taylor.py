@@ -37,9 +37,9 @@ def test_Poisson_taylor_f(poisson_problem):
         errors.append(abs(value - evaluation.value - step * derivative))
 
     rates0 = _convergence_rates(errors0, steps)
-    np.testing.assert_allclose(rates0, 1.0, atol=0.2)
+    np.testing.assert_allclose(rates0, 1.0, atol=0.05)
     rates = _convergence_rates(errors, steps)
-    np.testing.assert_allclose(rates, 2.0, atol=0.2)
+    np.testing.assert_allclose(rates, 2.0, atol=0.05)
 
 
 def test_Poisson_taylor_nu(poisson_problem):
@@ -59,9 +59,9 @@ def test_Poisson_taylor_nu(poisson_problem):
         errors.append(abs(value - evaluation.value - step * derivative))
 
     rates0 = _convergence_rates(errors0, steps)
-    np.testing.assert_allclose(rates0, 1.0, atol=0.2)
+    np.testing.assert_allclose(rates0, 1.0, atol=0.05)
     rates = _convergence_rates(errors, steps)
-    np.testing.assert_allclose(rates, 2.0, atol=0.2)
+    np.testing.assert_allclose(rates, 2.0, atol=0.05)
 
 
 def test_Poisson_taylor_bc(poisson_problem):
@@ -86,6 +86,6 @@ def test_Poisson_taylor_bc(poisson_problem):
         errors.append(abs(value - evaluation.value - step * derivative))
 
     rates0 = _convergence_rates(errors0, steps)
-    np.testing.assert_allclose(rates0, 1.0, atol=0.2)
+    np.testing.assert_allclose(rates0, 1.0, atol=0.05)
     rates = _convergence_rates(errors, steps)
-    np.testing.assert_allclose(rates, 2.0, atol=0.2)
+    np.testing.assert_allclose(rates, 2.0, atol=0.05)

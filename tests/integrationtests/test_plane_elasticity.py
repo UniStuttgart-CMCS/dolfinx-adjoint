@@ -9,16 +9,14 @@ components rather than a single entry of the gradient.
 import numpy as np
 import pytest
 from dolfinx import fem, mesh
-from mpi4py import MPI
+
+from dolfinx_adjoint import Graph
 
 
-def _convergence_rates(errors: np.ndarray, steps: np.ndarray) -> list:
-    rates = []
-    for i in range(1, len(steps)):
-        rates.append(
-            np.log(errors[i] / errors[i - 1]) / np.log(steps[i] / steps[i - 1])
-        )
-    return rates
+def _convergence_rates(errors, steps):
+    errors = np.asarray(errors)
+    steps = np.asarray(steps)
+    return np.log(errors[1:] / errors[:-1]) / np.log(steps[1:] / steps[:-1])
 
 
 @pytest.mark.parametrize(
@@ -26,39 +24,21 @@ def _convergence_rates(errors: np.ndarray, steps: np.ndarray) -> list:
 )
 def test_plane_elasticity_taylor_bc(plane_elasticity_problem):
     """Taylor test for J with respect to the controlled boundary condition."""
-    graph_ = plane_elasticity_problem["graph_"]
-    uD_control = plane_elasticity_problem["uD_control"]
-    J = plane_elasticity_problem["J"]
-
-    J_node = graph_.get_node(id(J))
-    assert J_node is not None
-
-    comm = uD_control.function_space.mesh.comm
-    J0 = comm.allreduce(J_node.object, op=MPI.SUM)
-
-    grad = graph_.backprop(id(J), id(uD_control))
-    grad_array = grad.array if hasattr(grad, "array") else np.array(grad)
-
-    direction = fem.Function(uD_control.function_space)
+    evaluation = plane_elasticity_problem.evaluate(graph=Graph())
+    gradient = evaluation.graph.backprop(id(evaluation.J), id(evaluation.u_D))
+    direction = fem.Function(evaluation.u_D.function_space)
     direction.interpolate(lambda x: np.stack((np.sin(np.pi * x[0]), 1.0 + 0.5 * x[1])))
+    derivative = gradient.dot(direction.x.petsc_vec)
 
-    dJ = grad.dot(direction.x.petsc_vec)
-
-    u_org = uD_control.x.array.copy()
-    step_length = 1e-2
-    steps = [step_length * (0.5**i) for i in range(4)]
+    steps = 1e-2 * 0.5 ** np.arange(4)
     errors0 = []
     errors = []
-    try:
-        for h in steps:
-            uD_control.x.array[:] = u_org + h * direction.x.array
-            graph_.recalculate()
-            Jh = comm.allreduce(J_node.object, op=MPI.SUM)
-            errors0.append(abs(Jh - J0))
-            errors.append(abs(Jh - J0 - h * dJ))
-    finally:
-        uD_control.x.array[:] = u_org
-        graph_.recalculate()
+    for step in steps:
+        u_D = evaluation.u_D.copy()
+        u_D.x.petsc_vec.axpy(step, direction.x.petsc_vec)
+        value = plane_elasticity_problem.evaluate(u_D=u_D).value
+        errors0.append(abs(value - evaluation.value))
+        errors.append(abs(value - evaluation.value - step * derivative))
 
     rates0 = _convergence_rates(errors0, steps)
     np.testing.assert_allclose(rates0, 1.0, atol=0.2)

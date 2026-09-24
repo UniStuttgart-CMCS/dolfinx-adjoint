@@ -14,7 +14,7 @@ from mpi4py import MPI
 from petsc4py.PETSc import ScalarType
 
 
-def test_material_param_lambda(linear_elasticity_problem):
+def test_material_param_lambda(linear_elasticity_evaluation):
     """
     Test gradient of J with respect to the material parameter λ.
 
@@ -39,14 +39,15 @@ def test_material_param_lambda(linear_elasticity_problem):
 
         dJ/dλ = θ^T * ∂F/∂λ
     """
-    domain = linear_elasticity_problem["domain"]
-    u = linear_elasticity_problem["u"]
-    lambda_ = linear_elasticity_problem["lambda_"]
-    F = linear_elasticity_problem["F"]
-    J_form = linear_elasticity_problem["J_form"]
-    J = linear_elasticity_problem["J"]
-    bcs_dofs = linear_elasticity_problem["bcs_dofs"]
-    graph_ = linear_elasticity_problem["graph_"]
+    problem = linear_elasticity_evaluation.problem
+    domain = problem.domain
+    u = linear_elasticity_evaluation.u
+    lambda_ = linear_elasticity_evaluation.lambda_
+    F = linear_elasticity_evaluation.F
+    J_form = linear_elasticity_evaluation.J_form
+    J = linear_elasticity_evaluation.J
+    bcs_dofs = problem.bcs_dofs
+    graph_ = linear_elasticity_evaluation.graph
 
     dJdu = ufl.derivative(J_form, u)
     dFdu = ufl.derivative(F, u)
@@ -88,7 +89,7 @@ def test_material_param_lambda(linear_elasticity_problem):
     assert np.allclose(dJdlambda, graph_.backprop(id(J), id(lambda_)))
 
 
-def test_material_param_mu(linear_elasticity_problem):
+def test_material_param_mu(linear_elasticity_evaluation):
     """
     Test gradient of J with respect to the material parameter μ.
 
@@ -113,14 +114,15 @@ def test_material_param_mu(linear_elasticity_problem):
 
         dJ/dμ = θ^T * ∂F/∂μ
     """
-    domain = linear_elasticity_problem["domain"]
-    u = linear_elasticity_problem["u"]
-    mu = linear_elasticity_problem["mu"]
-    F = linear_elasticity_problem["F"]
-    J_form = linear_elasticity_problem["J_form"]
-    J = linear_elasticity_problem["J"]
-    bcs_dofs = linear_elasticity_problem["bcs_dofs"]
-    graph_ = linear_elasticity_problem["graph_"]
+    problem = linear_elasticity_evaluation.problem
+    domain = problem.domain
+    u = linear_elasticity_evaluation.u
+    mu = linear_elasticity_evaluation.mu
+    F = linear_elasticity_evaluation.F
+    J_form = linear_elasticity_evaluation.J_form
+    J = linear_elasticity_evaluation.J
+    bcs_dofs = problem.bcs_dofs
+    graph_ = linear_elasticity_evaluation.graph
 
     dJdu = ufl.derivative(J_form, u)
     dFdu = ufl.derivative(F, u)

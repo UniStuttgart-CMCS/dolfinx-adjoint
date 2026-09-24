@@ -7,6 +7,7 @@ explicit adjoint calculations.
 """
 
 import numpy as np
+import pytest
 import ufl
 from dolfinx import fem, la
 from dolfinx.fem.petsc import LinearProblem
@@ -14,7 +15,7 @@ from mpi4py import MPI
 from petsc4py.PETSc import ScalarType
 
 
-def test_Poisson_dJdf(poisson_problem):
+def test_Poisson_dJdf(poisson_evaluation):
     """
     Test gradient of J with respect to forcing term f.
 
@@ -39,14 +40,15 @@ def test_Poisson_dJdf(poisson_problem):
         dJ/df = λᵀ * ∂F/∂f + ∂J/∂f                                  (1.5)
     """
 
-    domain = poisson_problem["domain"]
-    F = poisson_problem["F"]
-    uh = poisson_problem["uh"]
-    f = poisson_problem["f"]
-    J_form = poisson_problem["J_form"]
-    bcs_dofs = poisson_problem["bcs_dofs"]
-    graph_ = poisson_problem["graph_"]
-    J = poisson_problem["J"]
+    problem = poisson_evaluation.problem
+    domain = problem.domain
+    F = poisson_evaluation.F
+    uh = poisson_evaluation.u
+    f = poisson_evaluation.f
+    J_form = poisson_evaluation.J_form
+    bcs_dofs = problem.bcs_dofs
+    graph_ = poisson_evaluation.graph
+    J = poisson_evaluation.J
 
     dFdu = ufl.derivative(F, uh)
     dFdf = ufl.derivative(F, f)
@@ -85,7 +87,7 @@ def test_Poisson_dJdf(poisson_problem):
     )
 
 
-def test_Poisson_dJdnu(poisson_problem):
+def test_Poisson_dJdnu(poisson_evaluation):
     """
     Test gradient of J with respect to diffusion coefficient ν.
 
@@ -109,14 +111,15 @@ def test_Poisson_dJdnu(poisson_problem):
     and then compute the gradient of J(u) with respect to ν using (2.3).
         dJ/dν = λᵀ * ∂F/∂ν + ∂J/∂ν                                  (2.5)
     """
-    domain = poisson_problem["domain"]
-    F = poisson_problem["F"]
-    uh = poisson_problem["uh"]
-    nu = poisson_problem["nu"]
-    J_form = poisson_problem["J_form"]
-    bcs_dofs = poisson_problem["bcs_dofs"]
-    graph_ = poisson_problem["graph_"]
-    J = poisson_problem["J"]
+    problem = poisson_evaluation.problem
+    domain = problem.domain
+    F = poisson_evaluation.F
+    uh = poisson_evaluation.u
+    nu = poisson_evaluation.nu
+    J_form = poisson_evaluation.J_form
+    bcs_dofs = problem.bcs_dofs
+    graph_ = poisson_evaluation.graph
+    J = poisson_evaluation.J
 
     DG0 = fem.functionspace(domain, ("DG", 0))
     nu_function = fem.Function(DG0, name="nu")
@@ -159,7 +162,7 @@ def test_Poisson_dJdnu(poisson_problem):
     assert np.allclose(graph_.backprop(id(J), id(nu)), gradient)
 
 
-def test_Poisson_dJdbc(poisson_problem):
+def test_Poisson_dJdbc(poisson_evaluation):
     """
     Test gradient of J with respect to boundary condition u_D.
 
@@ -204,15 +207,16 @@ def test_Poisson_dJdbc(poisson_problem):
     on all of Ω and not only on the part of ∂Ω where the boundary condition is applied. We
     extract those values and set everything else to zero.
     """
-    domain = poisson_problem["domain"]
-    F = poisson_problem["F"]
-    uh = poisson_problem["uh"]
-    uD_control = poisson_problem["uD_control"]
-    J_form = poisson_problem["J_form"]
-    control_dofs = poisson_problem["control_dofs"]
-    bcs_dofs = poisson_problem["bcs_dofs"]
-    graph_ = poisson_problem["graph_"]
-    J = poisson_problem["J"]
+    problem = poisson_evaluation.problem
+    domain = problem.domain
+    F = poisson_evaluation.F
+    uh = poisson_evaluation.u
+    uD_control = poisson_evaluation.u_D
+    J_form = poisson_evaluation.J_form
+    control_dofs = problem.control_dofs
+    bcs_dofs = problem.bcs_dofs
+    graph_ = poisson_evaluation.graph
+    J = poisson_evaluation.J
 
     dFdu = ufl.derivative(F, uh)
     dJdu = ufl.derivative(J_form, uh)
@@ -259,3 +263,23 @@ def test_Poisson_dJdbc(poisson_problem):
         ),
         op=MPI.LAND,
     )
+
+
+@pytest.mark.skipif(
+    MPI.COMM_WORLD.size > 1,
+    reason="Boundary dof ownership is checked locally in this test",
+)
+@pytest.mark.parametrize("solver", ["linear"], indirect=True)
+@pytest.mark.parametrize("boundary_condition", ["inflow"], indirect=True)
+def test_Poisson_controlled_boundary_dofs(poisson_problem):
+    """Check the open controlled boundary in serial."""
+    controlled_dofs = poisson_problem.control_dofs
+    assert controlled_dofs.size > 0
+    dof_coordinates = poisson_problem.V.tabulate_dof_coordinates()
+    controlled_coordinates = dof_coordinates[controlled_dofs]
+    invalid = np.count_nonzero(
+        ~np.isclose(controlled_coordinates[:, 0], 0.0)
+        | np.isclose(controlled_coordinates[:, 1], 0.0)
+        | np.isclose(controlled_coordinates[:, 1], 1.0)
+    )
+    assert invalid == 0

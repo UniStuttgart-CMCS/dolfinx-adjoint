@@ -16,7 +16,7 @@ from mpi4py import MPI
 @pytest.mark.parametrize(
     "unit_square_mesh", [mesh.CellType.triangle], indirect=True, ids=["triangle"]
 )
-def test_Heat_initial(heat_equation_problem):
+def test_Heat_initial(heat_equation_evaluation):
     """
     Test gradient of J with respect to the initial condition.
 
@@ -48,15 +48,15 @@ def test_Heat_initial(heat_equation_problem):
 
         $$\\frac{dJ}{du_0} = \\lambda_1^T \\frac{\\partial F}{\\partial u_0} + \\frac{\\partial J}{\\partial u_0}$$
     """
-    domain = heat_equation_problem["domain"]
-    graph_ = heat_equation_problem["graph_"]
-    J_form = heat_equation_problem["J_form"]
-    J = heat_equation_problem["J"]
-    initial_guess = heat_equation_problem["initial_guess"]
-    u_next = heat_equation_problem["u_next"]
-    u_prev = heat_equation_problem["u_prev"]
-    F = heat_equation_problem["F"]
-    u_iterations = heat_equation_problem["u_iterations"]
+    domain = heat_equation_evaluation.problem.domain
+    graph_ = heat_equation_evaluation.graph
+    J_form = heat_equation_evaluation.J_form
+    J = heat_equation_evaluation.J
+    initial_guess = heat_equation_evaluation.initial_guess
+    u_next = heat_equation_evaluation.u_next
+    u_prev = heat_equation_evaluation.u_prev
+    F = heat_equation_evaluation.F
+    u_iterations = heat_equation_evaluation.u_iterations
 
     dJdu = ufl.derivative(J_form, u_next)
     dJdu_0 = ufl.derivative(J_form, initial_guess)

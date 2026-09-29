@@ -1,7 +1,9 @@
 import gc
 import os
+from typing import ValuesView
 
 import networkx as nx
+from dolfinx.mesh import Mesh
 from networkx import DiGraph
 
 from .edge import Edge
@@ -15,7 +17,7 @@ class Graph:
     operations, objects and dependencies in a forward simulation in DOLFINx.
 
     Attributes:
-        nodes (list): List of nodes in the graph
+        nodes (ValuesView): Nodes in recording order, added through :py:meth:`add_node`.
         edes (list): List of edges in the graph
 
     Example:
@@ -39,11 +41,22 @@ class Graph:
         The constructor initialises the lists to store the nodes and edges of the graph.
 
         """
-        self.nodes = []
         self.edges = []
+        # Exact-version lookup and iteration share the recording order.
+        self._nodes = {}
+        self._latest = {}
 
         # Cached networkx graph for fast descendants/ancestors queries
         self._nx_graph = None
+
+    @property
+    def nodes(self) -> ValuesView[AbstractNode]:
+        """The recorded nodes, in insertion order.
+
+        Returns:
+            ValuesView: A live view of all versions. Add nodes with :py:meth:`add_node`.
+        """
+        return self._nodes.values()
 
     def add_node(self, node: Node):
         """Add a node to the graph
@@ -52,7 +65,14 @@ class Graph:
             node (Node): The node to be added to the graph
 
         """
-        self.nodes.append(node)
+        latest = self._latest.get(node.id)
+        if latest is not None and node.version <= latest.version:
+            raise ValueError(
+                f"Version {node.version} of {node} must follow its latest recorded "
+                f"version {latest.version}."
+            )
+        self._nodes[node.id, node.version] = node
+        self._latest[node.id] = node
         if self._nx_graph is not None:
             self._add_node_to_networkx(self._nx_graph, node)
 
@@ -79,33 +99,34 @@ class Graph:
         if self._nx_graph is not None:
             self._add_edge_to_networkx(self._nx_graph, edge)
 
-    def get_node(self, id: int, version=None):
-        """Get a node from the graph
+    def get_node(self, value, version=None) -> AbstractNode | None:
+        """Get the node of a recorded object or an exact node owned by this graph.
 
         Args:
-            id (int): The python-id of the node to be retrieved
-            version (int, optional): The version of the node to be retrieved. Defaults to None.
+            value: The recorded object, mesh or exact node.
+            version (int, optional): The recorded version of an object. Defaults to
+                its latest version. Must be None when value is an exact node, which
+                already identifies its version.
 
         Returns:
-            Node: The node with the given id and version
+            AbstractNode or None: The matching node, or None if it is not recorded
+            in this graph. An exact node must match by identity.
 
+        Raises:
+            TypeError: If a non-None version is supplied with an exact node.
         """
-        # Get all nodes with the given id
-        node_versions = {}
-        for node in self.nodes:
-            if node.id == id:
-                node_versions[node.version] = node
-        if node_versions == {}:
-            return None
-        # If no version is given, return the latest version
+
+        if isinstance(value, AbstractNode):
+            if version is not None:
+                raise TypeError("Version cannot be supplied with an exact node.")
+            node = self._nodes.get((value.id, value.version))
+            return node if node is value else None
+        if isinstance(value, Mesh):
+            # Geometry nodes use the C++ mesh identity shared with UFL cargo.
+            value = value._cpp_object
         if version is None:
-            latest_version = max(node_versions.keys())
-            return node_versions[latest_version]
-        # If a version is given, return the node with the given version
-        elif version in node_versions.keys():
-            return node_versions[version]
-        else:
-            return None
+            return self._latest.get(id(value))
+        return self._nodes.get((id(value), version))
 
     def get_edge(self, predecessor: Node, successor: Node):
         """Get an edge from the graph
@@ -301,7 +322,7 @@ class Graph:
             )
         plt.savefig(filename)
 
-    def backprop(self, function_id: int, variable_id=None, seed=1.0):
+    def backprop(self, function, variable=None, seed=1.0):
         """
         Perform backpropagation in the graph
 
@@ -320,8 +341,9 @@ class Graph:
         with :py:meth:`Node.get_grad` on the respective nodes.
 
         Args:
-            function_id (int): The id of the function to be differentiated
-            variable_id (int, optional): The id of the variable (control) with respect to which
+            function: The recorded object to differentiate, or its exact Node.
+                An object selects its latest version; a Node selects that version.
+            variable: The control object or its exact Node with respect to which
                 the differentiation is performed. Defaults to None. If None, the propagation is
                 carried out down to the dependency leaves of the function.
             seed (float or PETSc.Vec, optional): The adjoint value the propagation is
@@ -357,10 +379,10 @@ class Graph:
 
         """
 
-        function_node = self.get_node(function_id)
+        function_node = self.get_node(function)
         if function_node is None:
             raise ValueError(
-                f"The function with id {function_id} is not part of the graph."
+                f"The function with id {id(function)} is not part of the graph."
             )
 
         if not nx.is_directed_acyclic_graph(self._get_networkx_graph()):
@@ -368,26 +390,26 @@ class Graph:
                 "The graph contains a cycle and is therefore no longer a DAG."
             )
 
-        if variable_id is not None:
-            variable_node = self.get_node(variable_id)
+        if variable is not None:
+            variable_node = self.get_node(variable)
             if variable_node is None:
                 raise ValueError(
-                    f"The variable with id {variable_id} is not part of the graph."
+                    f"The variable with id {id(variable)} is not part of the graph."
                 )
             if not isinstance(variable_node, Node):
                 raise TypeError(
-                    f"The variable {variable_node} with id {variable_id} does not represent a numerical value and can therefore not store a gradient."
+                    f"The variable {variable_node} with id {id(variable)} does not represent a numerical value and can therefore not store a gradient."
                 )
             nx_graph = self._get_networkx_graph()
             if id(variable_node) not in nx.ancestors(nx_graph, id(function_node)) | {
                 id(function_node)
             }:
                 raise ValueError(
-                    f"The function with id {function_id} does not depend on the variable with id {variable_id}."
+                    f"The function with id {id(function)} does not depend on the variable with id {id(variable)}."
                 )
 
         self.reset_grads()
-        if variable_id is not None:
+        if variable is not None:
             self.get_path(id(variable_node), id(function_node))
         else:
             self.get_dependencies(id(function_node))
@@ -400,7 +422,7 @@ class Graph:
         seed_edge.set_next_functions(function_node.get_gradFuncs())
         seed_edge(seed)
 
-        if variable_id is not None:
+        if variable is not None:
             return variable_node.get_grad()
 
     def get_path(self, start_id: int, end_id: int):

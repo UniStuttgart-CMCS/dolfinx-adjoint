@@ -25,7 +25,7 @@ def _convergence_rates(errors, steps):
 def test_plane_elasticity_taylor_bc(plane_elasticity_problem):
     """Taylor test for J with respect to the controlled boundary condition."""
     evaluation = plane_elasticity_problem.evaluate(graph=Graph())
-    gradient = evaluation.graph.backprop(id(evaluation.J), id(evaluation.u_D))
+    gradient = evaluation.graph.backprop(evaluation.J, evaluation.u_D)
     direction = fem.Function(evaluation.u_D.function_space)
     direction.interpolate(lambda x: np.stack((np.sin(np.pi * x[0]), 1.0 + 0.5 * x[1])))
     derivative = gradient.dot(direction.x.petsc_vec)

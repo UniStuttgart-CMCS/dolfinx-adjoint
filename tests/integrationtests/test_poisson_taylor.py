@@ -21,7 +21,7 @@ def _convergence_rates(errors, steps):
 def test_Poisson_taylor_f(poisson_problem):
     """Taylor test for J with respect to the forcing term f (graph backprop)."""
     evaluation = poisson_problem.evaluate(graph=Graph())
-    gradient = evaluation.graph.backprop(id(evaluation.J), id(evaluation.f))
+    gradient = evaluation.graph.backprop(evaluation.J, evaluation.f)
     direction = fem.Function(evaluation.f.function_space)
     direction.interpolate(lambda x: x[0] + np.sin(x[1]))
     derivative = gradient.dot(direction.x.petsc_vec)
@@ -45,7 +45,7 @@ def test_Poisson_taylor_f(poisson_problem):
 def test_Poisson_taylor_nu(poisson_problem):
     """Taylor test for J with respect to the diffusion coefficient nu."""
     evaluation = poisson_problem.evaluate(graph=Graph())
-    gradient = evaluation.graph.backprop(id(evaluation.J), id(evaluation.nu))
+    gradient = evaluation.graph.backprop(evaluation.J, evaluation.nu)
     direction = 1.0
     derivative = gradient * direction
     nu = float(evaluation.nu.value)
@@ -67,7 +67,7 @@ def test_Poisson_taylor_nu(poisson_problem):
 def test_Poisson_taylor_bc(poisson_problem):
     """Taylor test for J with respect to the controlled boundary condition."""
     evaluation = poisson_problem.evaluate(graph=Graph())
-    gradient = evaluation.graph.backprop(id(evaluation.J), id(evaluation.u_D))
+    gradient = evaluation.graph.backprop(evaluation.J, evaluation.u_D)
     smooth = fem.Function(evaluation.u_D.function_space)
     smooth.interpolate(lambda x: 1.0 + np.sin(np.pi * x[1]) + x[0])
     direction = fem.Function(evaluation.u_D.function_space)

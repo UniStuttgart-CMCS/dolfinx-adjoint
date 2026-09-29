@@ -42,7 +42,7 @@ def assemble_scalar(*args, **kwargs):
     _graph.add_node(assemble_node)
 
     # Create edge between form and assemble
-    form_node = _graph.get_node(id(M))
+    form_node = _graph.get_node(M)
 
     # The default edge is sufficient, since assembling a scalar does not require any additional operations
     # for the gradients

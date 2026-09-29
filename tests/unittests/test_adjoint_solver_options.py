@@ -55,7 +55,7 @@ def adjoint_edge(request, option) -> Edge:
 
     predecessor = {"coefficient": f, "constant": c, "boundary": bcs[0]}[request.param]
     edge = graph_.get_edge(
-        graph_.get_node(id(predecessor)), graph_.get_node(id(problem))
+        graph_.get_node(predecessor), graph_.get_node(problem)
     )
 
     edge.input_value = create_vector(V)

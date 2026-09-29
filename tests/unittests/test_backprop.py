@@ -104,7 +104,7 @@ def test_backprop_repeats_the_chain_derivative_without_accumulating(chain_graph)
     _graph, objects, _, _ = chain_graph
 
     gradients = [
-        _graph.backprop(id(objects["objective"]), id(objects["variable"]))
+        _graph.backprop(objects["objective"], objects["variable"])
         for _ in range(2)
     ]
 
@@ -123,7 +123,7 @@ def test_backprop_sums_parallel_paths():
         ]
     )
 
-    gradient = _graph.backprop(id(objects["objective"]), id(objects["variable"]))
+    gradient = _graph.backprop(objects["objective"], objects["variable"])
 
     assert gradient == pytest.approx(2.0 * 3.0 + 5.0 * 7.0)
 
@@ -132,7 +132,7 @@ def test_backprop_stores_the_gradient_in_an_intermediate_control(chain_graph):
     """A selected intermediate node receives the gradient; its input does not."""
     _graph, objects, nodes, _ = chain_graph
 
-    gradient = _graph.backprop(id(objects["objective"]), id(objects["mid"]))
+    gradient = _graph.backprop(objects["objective"], objects["mid"])
 
     assert gradient == nodes["mid"].get_grad() == pytest.approx(3.0)
     assert nodes["variable"].get_grad() is None
@@ -151,7 +151,7 @@ def test_backprop_accumulates_in_specialised_nodes():
         node_types={"variable": DerivedNode},
     )
 
-    gradient = _graph.backprop(id(objects["objective"]), id(objects["variable"]))
+    gradient = _graph.backprop(objects["objective"], objects["variable"])
 
     assert gradient == pytest.approx(2.0)
 
@@ -169,7 +169,7 @@ def test_backprop_seeds_all_gradient_functions_of_the_function():
         ]
     )
 
-    gradient = _graph.backprop(id(objects["objective"]), id(objects["variable"]))
+    gradient = _graph.backprop(objects["objective"], objects["variable"])
 
     assert gradient == pytest.approx(2.0 * 3.0 + 5.0 * 7.0)
 
@@ -180,7 +180,7 @@ def test_backprop_without_a_variable_stores_gradients_only_in_dependency_leaves(
     """Unrestricted propagation stores gradients in the objective's dependency leaves."""
     _graph, objects, nodes, _ = two_input_graph
 
-    assert _graph.backprop(id(objects["objective"])) is None
+    assert _graph.backprop(objects["objective"]) is None
 
     assert nodes["variable"].get_grad() == pytest.approx(2.0)
     assert nodes["other_input"].get_grad() == pytest.approx(3.0)
@@ -193,10 +193,10 @@ def test_backprop_clears_gradients_when_switching_controls(two_input_graph):
     """Selecting another control clears the previously stored gradient."""
     _graph, objects, nodes, _ = two_input_graph
 
-    _graph.backprop(id(objects["objective"]), id(objects["variable"]))
+    _graph.backprop(objects["objective"], objects["variable"])
     assert nodes["variable"].get_grad() == pytest.approx(2.0)
 
-    _graph.backprop(id(objects["objective"]), id(objects["other_input"]))
+    _graph.backprop(objects["objective"], objects["other_input"])
     assert nodes["variable"].get_grad() is None
 
 
@@ -205,7 +205,7 @@ def test_backprop_scales_the_derivative_with_the_seed(chain_graph, seed):
     _graph, objects, _, _ = chain_graph
 
     gradient = _graph.backprop(
-        id(objects["objective"]), id(objects["variable"]), seed=seed
+        objects["objective"], objects["variable"], seed=seed
     )
 
     assert gradient == pytest.approx(seed * 6.0)
@@ -216,7 +216,7 @@ def test_backprop_of_the_function_with_respect_to_itself(single_edge_graph, seed
     _graph, objects, nodes, _ = single_edge_graph
 
     gradient = _graph.backprop(
-        id(objects["objective"]), id(objects["objective"]), seed=seed
+        objects["objective"], objects["objective"], seed=seed
     )
 
     assert gradient == nodes["objective"].get_grad() == pytest.approx(seed)
@@ -235,7 +235,7 @@ def test_backprop_skips_unmarked_objective_inputs():
         ]
     )
 
-    _graph.backprop(id(objects["objective"]), id(objects["variable"]))
+    _graph.backprop(objects["objective"], objects["variable"])
 
     assert _executed_edges(edges) == {"e_variable"}
 
@@ -247,7 +247,7 @@ def test_backprop_stops_execution_at_the_selected_control(
     """The selected control's own input operations must not execute."""
     _graph, objects, _, edges = chain_graph
 
-    _graph.backprop(id(objects["objective"]), id(objects[control]))
+    _graph.backprop(objects["objective"], objects[control])
 
     assert _executed_edges(edges) == expected
 
@@ -266,8 +266,8 @@ def test_backprop_updates_execution_when_switching_controls_and_modes(two_input_
         for edge in edges.values():
             edge.called = False
 
-        variable_id = None if control is None else id(objects[control])
-        _graph.backprop(id(objects["objective"]), variable_id)
+        variable = None if control is None else objects[control]
+        _graph.backprop(objects["objective"], variable)
 
         assert _executed_edges(edges) == expected, f"control={control!r}"
 
@@ -275,23 +275,16 @@ def test_backprop_updates_execution_when_switching_controls_and_modes(two_input_
 # Validation of the arguments
 
 
-def test_backprop_rejects_an_unknown_function(single_edge_graph):
-    """An unregistered function is reported with the id that has been passed."""
+@pytest.mark.parametrize("argument", [0, 1], ids=["function", "variable"])
+def test_backprop_rejects_an_unknown_argument(single_edge_graph, argument):
+    """Report the supplied object's id, rather than id(None) from a failed lookup."""
     _graph, objects, _, _ = single_edge_graph
-
-    # Report the supplied id, rather than id(None) from a failed node lookup.
     unregistered = object()
+    arguments = [objects["objective"], objects["variable"]]
+    arguments[argument] = unregistered
+
     with pytest.raises(ValueError, match=str(id(unregistered))):
-        _graph.backprop(id(unregistered), id(objects["variable"]))
-
-
-def test_backprop_rejects_an_unknown_variable(single_edge_graph):
-    """An unregistered variable is reported with the id that has been passed."""
-    _graph, objects, _, _ = single_edge_graph
-
-    unregistered = object()
-    with pytest.raises(ValueError, match=str(id(unregistered))):
-        _graph.backprop(id(objects["objective"]), id(unregistered))
+        _graph.backprop(*arguments)
 
 
 def test_backprop_with_an_unknown_argument_keeps_the_previous_gradients(
@@ -300,12 +293,12 @@ def test_backprop_with_an_unknown_argument_keeps_the_previous_gradients(
     """A call that is rejected does not discard the gradients of the previous call."""
     _graph, objects, nodes, _ = single_edge_graph
 
-    _graph.backprop(id(objects["objective"]), id(objects["variable"]))
+    _graph.backprop(objects["objective"], objects["variable"])
     assert nodes["variable"].get_grad() == pytest.approx(2.0)
 
     unregistered = object()
     with pytest.raises(ValueError):
-        _graph.backprop(id(objects["objective"]), id(unregistered))
+        _graph.backprop(objects["objective"], unregistered)
 
     assert nodes["variable"].get_grad() == pytest.approx(2.0)
 
@@ -320,7 +313,7 @@ def test_backprop_rejects_a_variable_that_cannot_store_a_gradient():
     )
 
     with pytest.raises(TypeError):
-        _graph.backprop(id(objects["objective"]), id(objects["variable"]))
+        _graph.backprop(objects["objective"], objects["variable"])
 
     assert _executed_edges(edges) == set()
 
@@ -330,6 +323,6 @@ def test_backprop_rejects_a_variable_the_function_does_not_depend_on(chain_graph
     _graph, objects, nodes, _ = chain_graph
 
     with pytest.raises(ValueError):
-        _graph.backprop(id(objects["mid"]), id(objects["objective"]))
+        _graph.backprop(objects["mid"], objects["objective"])
 
     assert nodes["mid"].get_grad() is None

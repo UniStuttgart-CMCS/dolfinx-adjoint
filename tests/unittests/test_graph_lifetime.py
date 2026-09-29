@@ -11,16 +11,28 @@ class _Value:
     """A stand-in value like ``object()``, which unlike it can be referenced weakly."""
 
 
-def test_assigning_a_function_from_itself_records_no_self_loop(unit_square_mesh):
-    """An assignment of a function to itself records no edge that closes on its own node."""
+@pytest.mark.parametrize(
+    "versions, expected",
+    [((None, None), [0, 1, 2]), ((3, None), [0, 3, 4]), ((3, 7), [0, 3, 7])],
+)
+def test_assigning_a_function_from_itself_records_no_self_loop(
+    unit_square_mesh, versions, expected
+):
+    """Catch reused default versions, ignored explicit versions, or self-loop edges."""
     graph_ = Graph()
     V = fem.functionspace(unit_square_mesh, ("Lagrange", 1))
     u = fem.Function(V, name="u", graph=graph_)
 
-    u.assign(u, graph=graph_)
+    nodes = [graph_.get_node(u)]
+    for version in versions:
+        options = {} if version is None else {"version": version}
+        u.assign(u, graph=graph_, **options)
+        nodes.append(graph_.get_node(u))
 
-    self_loops = [edge for edge in graph_.edges if edge.predecessor is edge.successor]
-    assert not self_loops
+    assert (
+        [node.version for node in nodes],
+        [(edge.predecessor, edge.successor) for edge in graph_.edges],
+    ) == (expected, list(zip(nodes, nodes[1:])))
 
 
 def test_backprop_rejects_a_graph_with_a_cycle():
@@ -34,7 +46,7 @@ def test_backprop_rejects_a_graph_with_a_cycle():
     graph_.add_edge(Edge(second, first))
 
     with pytest.raises(RuntimeError, match="cycle"):
-        graph_.backprop(id(second.object))
+        graph_.backprop(second.object)
 
 
 def test_release_frees_what_an_edge_saved_while_a_node_is_still_held():

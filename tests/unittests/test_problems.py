@@ -41,7 +41,7 @@ def test_problem_constant_gradient_is_taken_at_the_current_value(
     J_form = ufl.inner(uh, uh) * ufl.dx
     J = fem.assemble_scalar(fem.form(J_form, graph=graph_), graph=graph_)
 
-    gradient = graph_.backprop(id(J), id(c))
+    gradient = graph_.backprop(J, c)
 
     # P1 contains the exact solution u = c⁻², so J = c⁻⁴ on the unit square and
     # dJ/dc = -4 c⁻⁵ is -0.125. Evaluating ∂F/∂c = 2c u v at the constructor
@@ -76,7 +76,7 @@ def test_nonlinear_problem_constant_edge_gradient(
         },
         graph=graph_,
     )
-    edge = graph_.get_edge(graph_.get_node(id(c)), graph_.get_node(id(problem)))
+    edge = graph_.get_edge(graph_.get_node(c), graph_.get_node(problem))
 
     x = ufl.SpatialCoordinate(domain)
     seed = assemble_vector(fem.form((1 + x[0]) * ufl.conj(v) * ufl.dx))
@@ -135,7 +135,7 @@ def test_problem_constant_gradient_on_measures(
         },
         graph=graph_,
     )
-    edge = graph_.get_edge(graph_.get_node(id(c)), graph_.get_node(id(problem)))
+    edge = graph_.get_edge(graph_.get_node(c), graph_.get_node(problem))
 
     seed = -2.5
     adjoint_input = assemble_vector(fem.form(seed * ufl.conj(v) * ufl.dx))
@@ -213,7 +213,7 @@ def test_problem_records_a_solution_that_is_not_in_the_graph(
     J_form = ufl.inner(uh, uh) * ufl.dx
     J = fem.assemble_scalar(fem.form(J_form, graph=graph_), graph=graph_)
 
-    gradient = graph_.backprop(id(J), id(c))
+    gradient = graph_.backprop(J, c)
 
     # P1 contains the exact solution u = c⁻¹, so J = c⁻² on the unit square and
     # dJ/dc = -2 c⁻³ is -0.25.
@@ -256,7 +256,7 @@ def test_problem_edges_compile_the_adjoint_with_the_recorded_arguments(
         fem.form(J_form, entity_maps=[cell_map], graph=graph_), graph=graph_
     )
 
-    gradient = graph_.backprop(id(J), id(f))
+    gradient = graph_.backprop(J, f)
 
     # uh is the projection of f onto the half, so with f = 1 it is 1 and J is the area.
     # dJ/df is 2 f on the half, whose entries sum to twice that area.

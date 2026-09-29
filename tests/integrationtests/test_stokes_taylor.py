@@ -21,7 +21,7 @@ def _convergence_rates(errors, steps):
 def test_Stokes_taylor_nu(stokes_problem):
     """Taylor test for J with respect to the viscosity nu."""
     evaluation = stokes_problem.evaluate(graph=Graph())
-    gradient = evaluation.graph.backprop(id(evaluation.J), id(evaluation.nu))
+    gradient = evaluation.graph.backprop(evaluation.J, evaluation.nu)
     direction = 1.0
     derivative = gradient * direction
     nu = float(evaluation.nu.value)
@@ -47,7 +47,7 @@ def test_Stokes_taylor_g(stokes_problem):
     the obstacle, where J does not depend on g, is not masked by the direction.
     """
     evaluation = stokes_problem.evaluate(graph=Graph())
-    gradient = evaluation.graph.backprop(id(evaluation.J), id(evaluation.g))
+    gradient = evaluation.graph.backprop(evaluation.J, evaluation.g)
     direction = fem.Function(evaluation.g.function_space)
     direction.interpolate(
         lambda x: np.stack((1.0 + np.sin(np.pi * x[1]), np.cos(np.pi * x[0])))

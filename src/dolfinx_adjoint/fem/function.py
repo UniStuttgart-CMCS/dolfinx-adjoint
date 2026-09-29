@@ -69,7 +69,7 @@ class Function(fem.Function):
         function_node = graph.Node(result, name=result.name)
         _graph.add_node(function_node)
 
-        copied_node = _graph.get_node(id(self))
+        copied_node = _graph.get_node(self)
         copy_edge = graph.Edge(copied_node, function_node)
         function_node.set_gradFuncs([copy_edge])
         _graph.add_edge(copy_edge)
@@ -86,7 +86,8 @@ class Function(fem.Function):
             graph (graph, optional): An additional keyword argument to specifier whether the assemble
                 operation should be added to the graph. If not present, the original functionality
                 of dolfinx is used without any additional functionalities.
-            version (int, optional): An additional keyword argument to specify the version of the operation in the graph. If not present, the version is set to 0.
+            version (int, optional): The recorded version of the target. Defaults to
+                the version after its latest recorded one, or 0 if it is unrecorded.
 
         Note:
             The node is added in any case, since it is the version of this function the
@@ -96,11 +97,14 @@ class Function(fem.Function):
         self.x.array[:] = function.x.array[:]
 
         _graph = kwargs.pop("graph", None)
-        version = kwargs.pop("version", 0)
+        version = kwargs.pop("version", None)
         if _graph is None:
             return
 
-        function_node = _graph.get_node(id(function))
+        function_node = _graph.get_node(function)
+        if version is None:
+            previous = _graph.get_node(self)
+            version = 0 if previous is None else previous.version + 1
 
         assign_node = graph.Node(self, name=self.name, version=version)
         _graph.add_node(assign_node)

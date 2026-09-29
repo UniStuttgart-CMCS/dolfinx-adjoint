@@ -86,7 +86,7 @@ def test_material_param_lambda(linear_elasticity_evaluation):
     )
 
     # Compare automatic differentiation result with explicit adjoint calculation
-    assert np.allclose(dJdlambda, graph_.backprop(id(J), id(lambda_)))
+    assert np.allclose(dJdlambda, graph_.backprop(J, lambda_))
 
 
 def test_material_param_mu(linear_elasticity_evaluation):
@@ -159,4 +159,4 @@ def test_material_param_mu(linear_elasticity_evaluation):
     )
 
     # Compare automatic differentiation result with explicit adjoint calculation
-    assert np.allclose(dJdmu, graph_.backprop(id(J), id(mu)))
+    assert np.allclose(dJdmu, graph_.backprop(J, mu))

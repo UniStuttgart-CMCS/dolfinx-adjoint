@@ -35,7 +35,7 @@ def dirichletbc(*args, **kwargs):
     arguments = bind_arguments(fem.dirichletbc, *args, **kwargs)
     value = arguments["value"]
 
-    value_node = _graph.get_node(id(value))
+    value_node = _graph.get_node(value)
     if value_node is None:
         return output
 

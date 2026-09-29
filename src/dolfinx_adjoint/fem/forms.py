@@ -51,7 +51,7 @@ def form(*args, **kwargs):
 
     # Creating and adding edges to the graph if the coefficients are in the graph
     for coefficient in ufl_form.coefficients():
-        coefficient_node = _graph.get_node(id(coefficient))
+        coefficient_node = _graph.get_node(coefficient)
         if not coefficient_node == None:
             ctx = [ufl_form, coefficient]
             coefficient_edge = Form_Coefficient_Edge(
@@ -63,7 +63,7 @@ def form(*args, **kwargs):
 
     # Creating and adding edges to the graph if the constants are in the graph
     for constant in ufl_form.constants():
-        constant_node = _graph.get_node(id(constant))
+        constant_node = _graph.get_node(constant)
         if not constant_node == None:
             R = fem.functionspace(
                 constant.domain,

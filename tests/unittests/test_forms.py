@@ -28,7 +28,7 @@ def test_form_constant_edge_gradient_without_coefficient(
     J = fem.assemble_scalar(fem.form(J_form, graph=graph_), graph=graph_)
 
     seed = -2.5
-    gradient = graph_.backprop(id(J), id(c), seed=seed)
+    gradient = graph_.backprop(J, c, seed=seed)
 
     # The unit square has area 1, so dJ/dc is 3; the constructor value gives 1.
     assert np.isclose(gradient, seed * 3.0)
@@ -68,7 +68,7 @@ def test_form_constant_gradient_on_measures(
     J_form = ufl.inner(restricted_c, restricted_c) * weight * measure
     J = fem.assemble_scalar(fem.form(J_form, graph=graph_), graph=graph_)
     seed = -2.5
-    gradient = graph_.backprop(id(J), id(c), seed=seed)
+    gradient = graph_.backprop(J, c, seed=seed)
 
     expected = seed * 2.0 * value * weighted_measure
     if value.ndim == 0:
@@ -105,7 +105,7 @@ def test_form_is_replayed_with_the_arguments_it_was_recorded_with(
 
     graph_.recalculate()
 
-    assert np.isclose(graph_.get_node(id(J)).object, J)
+    assert np.isclose(graph_.get_node(J).object, J)
 
 
 @pytest.mark.parametrize("control_name", ["coefficient", "constant"])
@@ -139,7 +139,7 @@ def test_form_edges_compile_the_derivative_with_the_recorded_arguments(
     )
     control = {"coefficient": f, "constant": c}[control_name]
 
-    gradient = graph_.backprop(id(J), id(control))
+    gradient = graph_.backprop(J, control)
 
     # Both derivatives integrate 2 * 3 over the left half of the unit square.
     assert np.isclose(gradient.sum(), 2.0 * 3.0 * 0.5)

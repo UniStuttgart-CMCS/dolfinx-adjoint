@@ -39,8 +39,6 @@ class AbstractNode:
         self.id = id(object)
         self.version = version
         self.object = object
-        if version != 0:
-            object.version = version
         self.gradFuncs = []
         if "name" in kwargs:
             self._name = kwargs["name"]

@@ -68,7 +68,7 @@ class LinearProblem(LinearProblemBase):
         # solves into the same function, and it is given a node, so that the edges of the
         # problem can evaluate the state at it.
         u = arguments["u"] = self.u
-        u_node = _graph.get_node(id(u))
+        u_node = _graph.get_node(u)
         if u_node is None:
             u_node = graph.Node(u, name=u.name)
             _graph.add_node(u_node)
@@ -91,7 +91,7 @@ class LinearProblem(LinearProblemBase):
         for coefficient in F_form.coefficients():
             if coefficient == u:
                 continue
-            coefficient_node = _graph.get_node(id(coefficient))
+            coefficient_node = _graph.get_node(coefficient)
             if not coefficient_node == None:
                 # The graph is referenced weakly: it owns this edge, and the edge only
                 # needs it to look up the state after the solve, which does not exist yet.
@@ -113,7 +113,7 @@ class LinearProblem(LinearProblemBase):
 
         # Creating and adding edges to the graph if the constants are in the graph
         for constant in F_form.constants():
-            constant_node = _graph.get_node(id(constant))
+            constant_node = _graph.get_node(constant)
             if not constant_node == None:
                 R = fem.functionspace(
                     constant.domain,
@@ -141,7 +141,7 @@ class LinearProblem(LinearProblemBase):
         # Creating and adding edges to the graph if the boundary conditions are in the graph
         if arguments.get("bcs") is not None:
             for bc in arguments.get("bcs"):
-                bc_node = _graph.get_node(id(bc))
+                bc_node = _graph.get_node(bc)
                 if not bc_node == None:
                     adjoint_function = fem.Function(
                         u.function_space, name="adjoint_rhs"
@@ -173,7 +173,7 @@ class LinearProblem(LinearProblemBase):
 
         if _graph is not None:
             # The node stores the initial values, so it is created before the solve.
-            problem_node = _graph.get_node(id(self))
+            problem_node = _graph.get_node(self)
             solve_node = SolveNode(
                 self._u, problem_node, version=version, name=self._u.name
             )
@@ -241,7 +241,7 @@ class NonlinearProblem(NonlinearProblemBase):
 
         # The node of the solution lets the edges of the problem evaluate the state at
         # it, also for a solution the caller never tracked.
-        u_node = _graph.get_node(id(u))
+        u_node = _graph.get_node(u)
         if u_node is None:
             u_node = graph.Node(u, name=u.name)
             _graph.add_node(u_node)
@@ -260,7 +260,7 @@ class NonlinearProblem(NonlinearProblemBase):
         for coefficient in F_form.coefficients():
             if coefficient == u:
                 continue
-            coefficient_node = _graph.get_node(id(coefficient))
+            coefficient_node = _graph.get_node(coefficient)
             if not coefficient_node == None:
                 # The graph is referenced weakly: it owns this edge, and the edge only
                 # needs it to look up the state after the solve, which does not exist yet.
@@ -282,7 +282,7 @@ class NonlinearProblem(NonlinearProblemBase):
 
         # Creating and adding edges to the graph if the constants are in the graph
         for constant in F_form.constants():
-            constant_node = _graph.get_node(id(constant))
+            constant_node = _graph.get_node(constant)
             if not constant_node == None:
                 R = fem.functionspace(
                     constant.domain,
@@ -310,7 +310,7 @@ class NonlinearProblem(NonlinearProblemBase):
         # Creating and adding edges to the graph if the boundary conditions are in the graph
         if arguments.get("bcs") is not None:
             for bc in arguments.get("bcs"):
-                bc_node = _graph.get_node(id(bc))
+                bc_node = _graph.get_node(bc)
                 if not bc_node == None:
                     adjoint_function = fem.Function(
                         u.function_space, name="adjoint_rhs"
@@ -343,7 +343,7 @@ class NonlinearProblem(NonlinearProblemBase):
 
         if _graph is not None:
             # The node stores the initial values, so it is created before the solve.
-            problem_node = _graph.get_node(id(self))
+            problem_node = _graph.get_node(self)
             solve_node = SolveNode(
                 self._u, problem_node, version=version, name=self._u.name
             )
@@ -585,7 +585,7 @@ class Problem_Coefficient_Edge(graph.Edge):
         m_node = self.predecessor
 
         u = u_node.get_object()
-        u_next = graph_ref().get_node(u_node.id, version=u_node.version + 1)
+        u_next = graph_ref().get_node(u_node.object, version=u_node.version + 1)
 
         # Construct the transpose of the Jacobian J = ∂F/∂u
         V = u.function_space

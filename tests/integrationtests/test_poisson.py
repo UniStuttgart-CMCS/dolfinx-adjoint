@@ -82,7 +82,7 @@ def test_Poisson_dJdf(poisson_evaluation):
 
     # Compare automatic differentiation result with explicit adjoint calculation on the dofs owned by the calling rank.
     assert domain.comm.allreduce(
-        np.allclose(graph_.backprop(id(J), id(f)).array, gradient_df.petsc_vec.array),
+        np.allclose(graph_.backprop(J, f).array, gradient_df.petsc_vec.array),
         op=MPI.LAND,
     )
 
@@ -159,7 +159,7 @@ def test_Poisson_dJdnu(poisson_evaluation):
     )
 
     # Compare automatic differentiation result with explicit adjoint calculation
-    assert np.allclose(graph_.backprop(id(J), id(nu)), gradient)
+    assert np.allclose(graph_.backprop(J, nu), gradient)
 
 
 def test_Poisson_dJdbc(poisson_evaluation):
@@ -258,7 +258,7 @@ def test_Poisson_dJdbc(poisson_evaluation):
     # Compare automatic differentiation result with explicit adjoint calculation on the dofs owned by the calling rank.
     assert domain.comm.allreduce(
         np.allclose(
-            graph_.backprop(id(J), id(uD_control)).array,
+            graph_.backprop(J, uD_control).array,
             boundary_gradient.x.petsc_vec.array,
         ),
         op=MPI.LAND,

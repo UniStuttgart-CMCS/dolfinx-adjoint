@@ -143,7 +143,7 @@ For demos and tests, use ``pip install -e ".[all]"``.
    J = fem.assemble_scalar(fem.form(J_form, graph=graph_), graph=graph_)
 
    # Compute the gradient
-   dJdf = graph_.backprop(id(J), id(f))
+   dJdf = graph_.backprop(J, f)
 
 ----
 

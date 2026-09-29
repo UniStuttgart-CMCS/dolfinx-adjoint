@@ -61,7 +61,7 @@ def test_gradient_of_a_function_value(
     condition_of_v = dolfinx.fem.Function(V)
     dolfinx.fem.dirichletbc(v, dofs).set(condition_of_v.x.array)
 
-    edge = graph_.get_edge(graph_.get_node(id(g)), graph_.get_node(id(bc)))
+    edge = graph_.get_edge(graph_.get_node(g), graph_.get_node(bc))
     edge.input_value = u.x.petsc_vec
 
     assert np.isclose(
@@ -97,7 +97,7 @@ def test_gradient_of_a_condition_on_two_dofs(unit_square_mesh: mesh.Mesh):
     condition_of_v = dolfinx.fem.Function(V)
     dolfinx.fem.dirichletbc(v, dofs).set(condition_of_v.x.array)
 
-    edge = graph_.get_edge(graph_.get_node(id(g)), graph_.get_node(id(bc)))
+    edge = graph_.get_edge(graph_.get_node(g), graph_.get_node(bc))
     edge.input_value = u.x.petsc_vec
 
     assert np.isclose(
@@ -137,7 +137,7 @@ def test_gradient_of_a_value_on_a_collapsed_space(
     condition_of_v = dolfinx.fem.Function(V)
     dolfinx.fem.dirichletbc(v, dofs, V.sub(sub_space)).set(condition_of_v.x.array)
 
-    edge = graph_.get_edge(graph_.get_node(id(g)), graph_.get_node(id(bc)))
+    edge = graph_.get_edge(graph_.get_node(g), graph_.get_node(bc))
     edge.input_value = u.x.petsc_vec
 
     assert np.isclose(
@@ -182,7 +182,7 @@ def test_gradient_of_a_constant_value(
         direction_bc.set(condition_of_direction.x.array)
         expected[component] = u.x.petsc_vec.dot(condition_of_direction.x.petsc_vec)
 
-    edge = graph_.get_edge(graph_.get_node(id(c)), graph_.get_node(id(bc)))
+    edge = graph_.get_edge(graph_.get_node(c), graph_.get_node(bc))
     edge.input_value = u.x.petsc_vec
 
     gradient = edge.calculate_adjoint()

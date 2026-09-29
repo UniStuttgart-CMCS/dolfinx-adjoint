@@ -28,7 +28,7 @@ def test_form_constant_edge_gradient_without_coefficient(
     J = fem.assemble_scalar(fem.form(J_form, graph=graph_), graph=graph_)
 
     seed = -2.5
-    (gradient,) = graph_.backprop(J, c, seed=seed)
+    (gradient,) = graph_.backprop(J, c, grad_outputs=seed)
 
     # The unit square has area 1, so dJ/dc is 3; the constructor value gives 1.
     assert np.isclose(gradient, seed * 3.0)
@@ -68,7 +68,7 @@ def test_form_constant_gradient_on_measures(
     J_form = ufl.inner(restricted_c, restricted_c) * weight * measure
     J = fem.assemble_scalar(fem.form(J_form, graph=graph_), graph=graph_)
     seed = -2.5
-    (gradient,) = graph_.backprop(J, c, seed=seed)
+    (gradient,) = graph_.backprop(J, c, grad_outputs=seed)
 
     expected = seed * 2.0 * value * weighted_measure
     if value.ndim == 0:

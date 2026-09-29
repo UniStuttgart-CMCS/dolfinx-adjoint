@@ -322,7 +322,7 @@ class Graph:
             )
         plt.savefig(filename)
 
-    def backprop(self, function, variable=None, seed=1.0):
+    def backprop(self, outputs, inputs=None, grad_outputs=1.0):
         """
         Perform backpropagation in the graph
 
@@ -341,12 +341,12 @@ class Graph:
         with :py:meth:`Node.get_grad` on the respective nodes.
 
         Args:
-            function: The recorded object to differentiate, or its exact Node.
+            outputs: The recorded object to differentiate, or its exact Node.
                 An object selects its latest version; a Node selects that version.
-            variable: The control object or its exact Node with respect to which
+            inputs: The control object or its exact Node with respect to which
                 the differentiation is performed. Defaults to None. If None, the propagation is
                 carried out down to the dependency leaves of the function.
-            seed (float or PETSc.Vec, optional): The adjoint value the propagation is
+            grad_outputs (float or PETSc.Vec, optional): The adjoint value the propagation is
                 started with. Defaults to 1.0, the derivative of a scalar function
                 with respect to itself.
 
@@ -380,10 +380,10 @@ class Graph:
 
         """
 
-        function_node = self.get_node(function)
+        function_node = self.get_node(outputs)
         if function_node is None:
             raise ValueError(
-                f"The function with id {id(function)} is not part of the graph."
+                f"The function with id {id(outputs)} is not part of the graph."
             )
 
         if not nx.is_directed_acyclic_graph(self._get_networkx_graph()):
@@ -391,26 +391,26 @@ class Graph:
                 "The graph contains a cycle and is therefore no longer a DAG."
             )
 
-        if variable is not None:
-            variable_node = self.get_node(variable)
+        if inputs is not None:
+            variable_node = self.get_node(inputs)
             if variable_node is None:
                 raise ValueError(
-                    f"The variable with id {id(variable)} is not part of the graph."
+                    f"The variable with id {id(inputs)} is not part of the graph."
                 )
             if not isinstance(variable_node, Node):
                 raise TypeError(
-                    f"The variable {variable_node} with id {id(variable)} does not represent a numerical value and can therefore not store a gradient."
+                    f"The variable {variable_node} with id {id(inputs)} does not represent a numerical value and can therefore not store a gradient."
                 )
             nx_graph = self._get_networkx_graph()
             if id(variable_node) not in nx.ancestors(nx_graph, id(function_node)) | {
                 id(function_node)
             }:
                 raise ValueError(
-                    f"The function with id {id(function)} does not depend on the variable with id {id(variable)}."
+                    f"The function with id {id(outputs)} does not depend on the variable with id {id(inputs)}."
                 )
 
         self.reset_grads()
-        if variable is not None:
+        if inputs is not None:
             self.get_path(id(variable_node), id(function_node))
         else:
             self.get_dependencies(id(function_node))
@@ -421,9 +421,9 @@ class Graph:
         # be the result of more than one operation.
         seed_edge = Edge(function_node, None)
         seed_edge.set_next_functions(function_node.get_gradFuncs())
-        seed_edge(seed)
+        seed_edge(grad_outputs)
 
-        if variable is not None:
+        if inputs is not None:
             return (variable_node.get_grad(),)
 
     def get_path(self, start_id: int, end_id: int):

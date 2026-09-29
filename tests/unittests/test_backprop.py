@@ -205,7 +205,7 @@ def test_backprop_scales_the_derivative_with_the_seed(chain_graph, seed):
     _graph, objects, _, _ = chain_graph
 
     (gradient,) = _graph.backprop(
-        objects["objective"], objects["variable"], seed=seed
+        objects["objective"], objects["variable"], grad_outputs=seed
     )
 
     assert gradient == pytest.approx(seed * 6.0)
@@ -216,7 +216,7 @@ def test_backprop_of_the_function_with_respect_to_itself(single_edge_graph, seed
     _graph, objects, nodes, _ = single_edge_graph
 
     (gradient,) = _graph.backprop(
-        objects["objective"], objects["objective"], seed=seed
+        objects["objective"], objects["objective"], grad_outputs=seed
     )
 
     assert gradient == nodes["objective"].get_grad() == pytest.approx(seed)

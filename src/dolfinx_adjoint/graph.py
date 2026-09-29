@@ -351,8 +351,9 @@ class Graph:
                 with respect to itself.
 
         Returns:
-            float or PETSc.Vec: The gradient of the function with respect to the variable,
-            if a variable is given. Otherwise the gradients are only stored in the nodes.
+            tuple of float or PETSc.Vec: A one-element tuple containing the gradient
+            with respect to the variable, following :py:func:`torch.autograd.grad`.
+            Without a variable, gradients are only stored in the nodes and None is returned.
             A PETSc.Vec gradient has the layout of the vector of the variable, including its
             ghost entries, but only its entries owned by the calling rank are valid.
 
@@ -423,7 +424,7 @@ class Graph:
         seed_edge(seed)
 
         if variable is not None:
-            return variable_node.get_grad()
+            return (variable_node.get_grad(),)
 
     def get_path(self, start_id: int, end_id: int):
         """

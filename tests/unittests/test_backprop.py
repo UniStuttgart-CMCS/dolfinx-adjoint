@@ -104,7 +104,7 @@ def test_backprop_repeats_the_chain_derivative_without_accumulating(chain_graph)
     _graph, objects, _, _ = chain_graph
 
     gradients = [
-        _graph.backprop(objects["objective"], objects["variable"])
+        _graph.backprop(objects["objective"], objects["variable"])[0]
         for _ in range(2)
     ]
 
@@ -123,7 +123,7 @@ def test_backprop_sums_parallel_paths():
         ]
     )
 
-    gradient = _graph.backprop(objects["objective"], objects["variable"])
+    (gradient,) = _graph.backprop(objects["objective"], objects["variable"])
 
     assert gradient == pytest.approx(2.0 * 3.0 + 5.0 * 7.0)
 
@@ -132,7 +132,7 @@ def test_backprop_stores_the_gradient_in_an_intermediate_control(chain_graph):
     """A selected intermediate node receives the gradient; its input does not."""
     _graph, objects, nodes, _ = chain_graph
 
-    gradient = _graph.backprop(objects["objective"], objects["mid"])
+    (gradient,) = _graph.backprop(objects["objective"], objects["mid"])
 
     assert gradient == nodes["mid"].get_grad() == pytest.approx(3.0)
     assert nodes["variable"].get_grad() is None
@@ -151,7 +151,7 @@ def test_backprop_accumulates_in_specialised_nodes():
         node_types={"variable": DerivedNode},
     )
 
-    gradient = _graph.backprop(objects["objective"], objects["variable"])
+    (gradient,) = _graph.backprop(objects["objective"], objects["variable"])
 
     assert gradient == pytest.approx(2.0)
 
@@ -169,7 +169,7 @@ def test_backprop_seeds_all_gradient_functions_of_the_function():
         ]
     )
 
-    gradient = _graph.backprop(objects["objective"], objects["variable"])
+    (gradient,) = _graph.backprop(objects["objective"], objects["variable"])
 
     assert gradient == pytest.approx(2.0 * 3.0 + 5.0 * 7.0)
 
@@ -204,7 +204,7 @@ def test_backprop_scales_the_derivative_with_the_seed(chain_graph, seed):
     """The seed is the adjoint value of the function and scales the derivative."""
     _graph, objects, _, _ = chain_graph
 
-    gradient = _graph.backprop(
+    (gradient,) = _graph.backprop(
         objects["objective"], objects["variable"], seed=seed
     )
 
@@ -215,7 +215,7 @@ def test_backprop_of_the_function_with_respect_to_itself(single_edge_graph, seed
     """The derivative of the function with respect to itself is the seed."""
     _graph, objects, nodes, _ = single_edge_graph
 
-    gradient = _graph.backprop(
+    (gradient,) = _graph.backprop(
         objects["objective"], objects["objective"], seed=seed
     )
 

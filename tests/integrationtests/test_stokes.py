@@ -81,7 +81,7 @@ def test_Stokes_dJdnu(stokes_evaluation):
         fem.assemble_scalar(fem.form(gradient)), op=MPI.SUM
     )
 
-    assert np.allclose(graph_.backprop(J, nu), gradient)
+    assert np.allclose(graph_.backprop(J, nu)[0], gradient)
 
 
 def test_Stokes_dJdg(stokes_evaluation):
@@ -175,6 +175,6 @@ def test_Stokes_dJdg(stokes_evaluation):
 
     # Compare automatic differentiation result with explicit adjoint calculation on the dofs owned by the calling rank.
     assert problem.domain.comm.allreduce(
-        np.allclose(graph_.backprop(J, g).array, dJdg_vec.petsc_vec.array),
+        np.allclose(graph_.backprop(J, g)[0].array, dJdg_vec.petsc_vec.array),
         op=MPI.LAND,
     )

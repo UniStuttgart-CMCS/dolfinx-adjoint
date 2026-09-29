@@ -20,7 +20,7 @@ def _convergence_rates(errors, steps):
 def test_material_param_lambda_taylor(linear_elasticity_problem):
     """Taylor test for J with respect to the material parameter λ."""
     evaluation = linear_elasticity_problem.evaluate(graph=Graph())
-    gradient = evaluation.graph.backprop(evaluation.J, evaluation.lambda_)
+    (gradient,) = evaluation.graph.backprop(evaluation.J, evaluation.lambda_)
     direction = 1.0
     derivative = gradient * direction
     lambda_ = float(evaluation.lambda_.value)
@@ -44,7 +44,7 @@ def test_material_param_lambda_taylor(linear_elasticity_problem):
 def test_material_param_mu_taylor(linear_elasticity_problem):
     """Taylor test for J with respect to the material parameter μ."""
     evaluation = linear_elasticity_problem.evaluate(graph=Graph())
-    gradient = evaluation.graph.backprop(evaluation.J, evaluation.mu)
+    (gradient,) = evaluation.graph.backprop(evaluation.J, evaluation.mu)
     direction = 1.0
     derivative = gradient * direction
     mu = float(evaluation.mu.value)

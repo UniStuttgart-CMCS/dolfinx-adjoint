@@ -90,7 +90,7 @@ def test_Heat_initial(heat_equation_evaluation):
     # Compare automatic differentiation result with explicit adjoint calculation on the dofs owned by the calling rank.
     assert domain.comm.allreduce(
         np.allclose(
-            graph_.backprop(J, initial_guess).array, gradient.petsc_vec.array
+            graph_.backprop(J, initial_guess)[0].array, gradient.petsc_vec.array
         ),
         op=MPI.LAND,
     )

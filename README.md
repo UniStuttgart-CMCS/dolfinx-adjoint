@@ -47,7 +47,7 @@ problem.solve(graph=graph_)
 J = fem.assemble_scalar(fem.form(J_form, graph=graph_), graph=graph_)
 
 # Compute the gradient
-dJdf = graph_.backprop(J, f)
+(dJdf,) = graph_.backprop(J, f)
 ```
 
 ## Demos

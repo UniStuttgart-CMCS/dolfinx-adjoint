@@ -30,7 +30,7 @@ def test_Heat_taylor_initial(heat_equation_problem):
     remainder stays well above round-off.
     """
     evaluation = heat_equation_problem.evaluate(graph=Graph())
-    gradient = evaluation.graph.backprop(evaluation.J, evaluation.initial_guess)
+    (gradient,) = evaluation.graph.backprop(evaluation.J, evaluation.initial_guess)
     direction = fem.Function(evaluation.initial_guess.function_space)
     direction.interpolate(lambda x: np.sin(np.pi * x[0]) * np.sin(np.pi * x[1]) + x[0])
     derivative = gradient.dot(direction.x.petsc_vec)

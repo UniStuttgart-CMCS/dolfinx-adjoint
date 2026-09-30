@@ -6,7 +6,7 @@ from dolfinx import fem
 from petsc4py import PETSc
 
 import dolfinx_adjoint.graph as graph
-from dolfinx_adjoint.utils import bind_arguments
+from dolfinx_adjoint.fem._recording import bind_arguments
 
 
 def form(*args, **kwargs):

@@ -1,7 +1,7 @@
 from dolfinx import fem, la
 
 import dolfinx_adjoint.graph as graph
-from dolfinx_adjoint.utils import bind_arguments
+from dolfinx_adjoint.fem._recording import bind_arguments
 
 
 class Function(fem.Function):

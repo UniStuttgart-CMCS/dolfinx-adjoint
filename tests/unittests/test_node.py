@@ -5,7 +5,7 @@ from dolfinx import default_scalar_type, la
 from dolfinx.common import IndexMap
 from mpi4py import MPI
 
-from dolfinx_adjoint.node import Node
+from dolfinx_adjoint.graph import Node
 
 
 def test_accumulate_grad_sums_shared_vector():

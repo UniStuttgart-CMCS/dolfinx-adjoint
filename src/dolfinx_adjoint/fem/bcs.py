@@ -3,7 +3,7 @@ from basix.ufl import real_element
 from dolfinx import fem
 
 import dolfinx_adjoint.graph as graph
-from dolfinx_adjoint.utils import bind_arguments
+from dolfinx_adjoint.fem._recording import bind_arguments
 
 
 def dirichletbc(*args, **kwargs):

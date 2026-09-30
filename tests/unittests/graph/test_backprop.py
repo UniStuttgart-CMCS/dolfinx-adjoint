@@ -3,8 +3,7 @@
 import pytest
 
 import dolfinx_adjoint.graph as graph
-from dolfinx_adjoint.edge import Edge
-from dolfinx_adjoint.node import AbstractNode, Node
+from dolfinx_adjoint.graph import AbstractNode, Edge, Node
 
 
 class LinearEdge(Edge):

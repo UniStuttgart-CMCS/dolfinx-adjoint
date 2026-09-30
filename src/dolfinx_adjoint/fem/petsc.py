@@ -10,7 +10,7 @@ from dolfinx.fem.petsc import assign, set_bc
 from petsc4py import PETSc
 
 import dolfinx_adjoint.graph as graph
-from dolfinx_adjoint.utils import bind_arguments
+from dolfinx_adjoint.fem._recording import bind_arguments
 
 
 class LinearProblem(LinearProblemBase):

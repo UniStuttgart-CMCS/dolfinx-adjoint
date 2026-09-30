@@ -143,12 +143,3 @@ class Edge:
 
         """
         return f"{str(self.predecessor)} -> {str(self.successor)}"
-
-    def __del__(self):
-        """
-        Destructor for the Edge class.
-
-        """
-        del self.ctx
-        del self.input_value
-        del self

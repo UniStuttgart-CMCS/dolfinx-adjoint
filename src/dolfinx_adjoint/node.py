@@ -1,5 +1,4 @@
 import copy
-import ctypes
 from typing import Any
 
 import petsc4py.PETSc as PETSc
@@ -129,14 +128,6 @@ class AbstractNode:
         """
         return str(self.name)
 
-    def __del__(self):
-        """
-        Destructor for the AbstractNode class.
-
-        """
-        del self.object
-        del self
-
 
 class Node(AbstractNode):
     """
@@ -156,9 +147,9 @@ class Node(AbstractNode):
         self.grad = None
 
     def get_object(self):
-        if hasattr(self, "object"):
-            return self.object
-        return ctypes.cast(self.id, ctypes.py_object).value
+        """The object the node represents, or None once the node is released."""
+
+        return self.object
 
     def get_grad(self):
         return self.grad
@@ -166,7 +157,7 @@ class Node(AbstractNode):
     def reset_grad(self):
         self.grad = None
 
-    def accumulate_grad(self, value: float or PETSc.Vec):
+    def accumulate_grad(self, value: float | PETSc.Vec):
         """
         Accumulate a gradient contribution in the node.
 
@@ -191,8 +182,3 @@ class Node(AbstractNode):
         super().release()
         self.data = None
         self.grad = None
-
-    def __del__(self):
-        del self.data
-        del self.grad
-        return super().__del__()

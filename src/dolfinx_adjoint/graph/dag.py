@@ -18,7 +18,7 @@ class Graph:
 
     Attributes:
         nodes (ValuesView): Nodes in recording order, added through :py:meth:`add_node`.
-        edes (list): List of edges in the graph
+        edges (ValuesView): Edges in recording order, added through :py:meth:`add_edge`.
 
     Example:
         The graph object can be initialised and the default nodes and edges can be added as follows:
@@ -41,10 +41,11 @@ class Graph:
         The constructor initialises the lists to store the nodes and edges of the graph.
 
         """
-        self.edges = []
         # Exact-version lookup and iteration share the recording order.
         self._nodes = {}
         self._latest = {}
+        # Keyed by their endpoints so recording a time loop needs no list scans.
+        self._edges = {}
 
         # Cached networkx graph for fast descendants/ancestors queries
         self._nx_graph = None
@@ -57,6 +58,15 @@ class Graph:
             ValuesView: A live view of all versions. Add nodes with :py:meth:`add_node`.
         """
         return self._nodes.values()
+
+    @property
+    def edges(self) -> ValuesView[Edge]:
+        """The recorded edges, in insertion order.
+
+        Returns:
+            ValuesView: A live view of all edges. Add edges with :py:meth:`add_edge`.
+        """
+        return self._edges.values()
 
     def add_node(self, node: Node):
         """Add a node to the graph
@@ -91,11 +101,12 @@ class Graph:
             stays free of reference cycles.
 
         """
-        if self.get_edge(edge.predecessor, edge.successor) is not None:
+        key = (edge.predecessor, edge.successor)
+        if key in self._edges:
             raise ValueError(
                 f"An edge from {edge.predecessor} to {edge.successor} is already part of the graph."
             )
-        self.edges.append(edge)
+        self._edges[key] = edge
         if self._nx_graph is not None:
             self._add_edge_to_networkx(self._nx_graph, edge)
 
@@ -139,10 +150,7 @@ class Graph:
             Edge: The edge with the given predecessor and successor
 
         """
-        for edge in self.edges:
-            if edge.predecessor == predecessor and edge.successor == successor:
-                return edge
-        return None
+        return self._edges.get((predecessor, successor))
 
     def print(self, detailed=False) -> None:
         """

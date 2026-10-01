@@ -7,57 +7,34 @@ checking that the first-order Taylor remainder converges with rate two.
 """
 
 import numpy as np
+import pytest
 
-from dolfinx_adjoint import Graph
-
-
-def _convergence_rates(errors, steps):
-    errors = np.asarray(errors)
-    steps = np.asarray(steps)
-    return np.log(errors[1:] / errors[:-1]) / np.log(steps[1:] / steps[:-1])
+from dolfinx_adjoint.verification import _rates, _remainders
 
 
-def test_material_param_lambda_taylor(linear_elasticity_problem):
-    """Taylor test for J with respect to the material parameter λ."""
-    evaluation = linear_elasticity_problem.evaluate(graph=Graph())
-    (gradient,) = evaluation.graph.backprop(evaluation.J, evaluation.lambda_)
-    direction = 1.0
-    derivative = gradient * direction
-    lambda_ = float(evaluation.lambda_.value)
-
+@pytest.mark.parametrize("parameter", ["lambda_", "mu"])
+def test_material_param_taylor(
+    linear_elasticity_problem,
+    linear_elasticity_evaluation,
+    parameter,
+):
+    """Taylor test for J with respect to the material parameters λ and μ."""
+    evaluation = linear_elasticity_evaluation
+    control = getattr(evaluation, parameter)
+    (gradient,) = evaluation.graph.backprop(evaluation.J, control)
+    value = float(control.value)
     steps = 1e-2 * 0.5 ** np.arange(4)
-    errors0 = []
-    errors = []
-    for step in steps:
-        value = linear_elasticity_problem.evaluate(
-            lambda_=lambda_ + step * direction
-        ).value
-        errors0.append(abs(value - evaluation.value))
-        errors.append(abs(value - evaluation.value - step * derivative))
 
-    rates0 = _convergence_rates(errors0, steps)
-    np.testing.assert_allclose(rates0, 1.0, atol=0.05)
-    rates = _convergence_rates(errors, steps)
-    np.testing.assert_allclose(rates, 2.0, atol=0.05)
+    R0, R1 = _remainders(
+        lambda step: linear_elasticity_problem.evaluate(
+            **{parameter: value + step}
+        ).value,
+        evaluation.value,
+        gradient,
+        steps,
+    )
 
-
-def test_material_param_mu_taylor(linear_elasticity_problem):
-    """Taylor test for J with respect to the material parameter μ."""
-    evaluation = linear_elasticity_problem.evaluate(graph=Graph())
-    (gradient,) = evaluation.graph.backprop(evaluation.J, evaluation.mu)
-    direction = 1.0
-    derivative = gradient * direction
-    mu = float(evaluation.mu.value)
-
-    steps = 1e-2 * 0.5 ** np.arange(4)
-    errors0 = []
-    errors = []
-    for step in steps:
-        value = linear_elasticity_problem.evaluate(mu=mu + step * direction).value
-        errors0.append(abs(value - evaluation.value))
-        errors.append(abs(value - evaluation.value - step * derivative))
-
-    rates0 = _convergence_rates(errors0, steps)
-    np.testing.assert_allclose(rates0, 1.0, atol=0.05)
-    rates = _convergence_rates(errors, steps)
-    np.testing.assert_allclose(rates, 2.0, atol=0.05)
+    np.testing.assert_allclose(_rates(R0, steps), np.ones(len(steps) - 1), atol=0.05)
+    np.testing.assert_allclose(
+        _rates(R1, steps), 2 * np.ones(len(steps) - 1), atol=0.05
+    )

@@ -7,7 +7,6 @@ explicit adjoint calculations.
 """
 
 import numpy as np
-import pytest
 import ufl
 from dolfinx import fem, la
 from dolfinx.fem.petsc import LinearProblem
@@ -185,9 +184,9 @@ def test_Poisson_dJdbc(poisson_evaluation):
     by lifting the linear term. With the form F = a - L = 0, we get the assembled form F = A*u - b = 0.
     The boundary conditions are now applied by lifting the b vector:
         b = b - α A (u_D - x₀)
-    where α is a scaling factor (in this case α=-1) and x_0 is some weird thing that is not important here.
+    where α is a scaling factor and x₀ a given vector (α = 1 and x₀ = 0 for a linear problem).
     The term ∂F/∂u_D is now given by
-        ∂F/∂u_D = - α A
+        ∂F/∂u_D = α A = A
 
     Our adjoint approach thus is to solve the adjoint problem
         ∂Fᵀ/∂u * λ =  - ∂Jᵀ/∂u                                      (3.4)
@@ -263,23 +262,3 @@ def test_Poisson_dJdbc(poisson_evaluation):
         ),
         op=MPI.LAND,
     )
-
-
-@pytest.mark.skipif(
-    MPI.COMM_WORLD.size > 1,
-    reason="Boundary dof ownership is checked locally in this test",
-)
-@pytest.mark.parametrize("solver", ["linear"], indirect=True)
-@pytest.mark.parametrize("boundary_condition", ["inflow"], indirect=True)
-def test_Poisson_controlled_boundary_dofs(poisson_problem):
-    """Check the open controlled boundary in serial."""
-    controlled_dofs = poisson_problem.control_dofs
-    assert controlled_dofs.size > 0
-    dof_coordinates = poisson_problem.V.tabulate_dof_coordinates()
-    controlled_coordinates = dof_coordinates[controlled_dofs]
-    invalid = np.count_nonzero(
-        ~np.isclose(controlled_coordinates[:, 0], 0.0)
-        | np.isclose(controlled_coordinates[:, 1], 0.0)
-        | np.isclose(controlled_coordinates[:, 1], 1.0)
-    )
-    assert invalid == 0

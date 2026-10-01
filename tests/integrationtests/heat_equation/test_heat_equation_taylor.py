@@ -8,44 +8,33 @@ with rate two.
 """
 
 import numpy as np
-import pytest
-from dolfinx import fem, mesh
+from dolfinx import fem
 
-from dolfinx_adjoint import Graph
-
-
-def _convergence_rates(errors, steps):
-    errors = np.asarray(errors)
-    steps = np.asarray(steps)
-    return np.log(errors[1:] / errors[:-1]) / np.log(steps[1:] / steps[:-1])
+from dolfinx_adjoint.verification import _perturbed, _rates, _remainders
 
 
-@pytest.mark.parametrize(
-    "unit_square_mesh", [mesh.CellType.triangle], indirect=True, ids=["triangle"]
-)
-def test_Heat_taylor_initial(heat_equation_problem):
+def test_Heat_taylor_initial(heat_equation_problem, heat_equation_evaluation):
     """Taylor test for J with respect to the initial condition.
 
     The direction is a low mode, which the time steps damp only mildly, so that the
     remainder stays well above round-off.
     """
-    evaluation = heat_equation_problem.evaluate(graph=Graph())
+    evaluation = heat_equation_evaluation
     (gradient,) = evaluation.graph.backprop(evaluation.J, evaluation.initial_guess)
     direction = fem.Function(evaluation.initial_guess.function_space)
     direction.interpolate(lambda x: np.sin(np.pi * x[0]) * np.sin(np.pi * x[1]) + x[0])
-    derivative = gradient.dot(direction.x.petsc_vec)
-
     steps = 1e-2 * 0.5 ** np.arange(4)
-    errors0 = []
-    errors = []
-    for step in steps:
-        initial_guess = evaluation.initial_guess.copy()
-        initial_guess.x.petsc_vec.axpy(step, direction.x.petsc_vec)
-        value = heat_equation_problem.evaluate(initial_guess=initial_guess).value
-        errors0.append(abs(value - evaluation.value))
-        errors.append(abs(value - evaluation.value - step * derivative))
 
-    rates0 = _convergence_rates(errors0, steps)
-    np.testing.assert_allclose(rates0, 1.0, atol=0.05)
-    rates = _convergence_rates(errors, steps)
-    np.testing.assert_allclose(rates, 2.0, atol=0.05)
+    R0, R1 = _remainders(
+        lambda step: heat_equation_problem.evaluate(
+            initial_guess=_perturbed(evaluation.initial_guess, direction, step)
+        ).value,
+        evaluation.value,
+        gradient.dot(direction.x.petsc_vec),
+        steps,
+    )
+
+    np.testing.assert_allclose(_rates(R0, steps), np.ones(len(steps) - 1), atol=0.05)
+    np.testing.assert_allclose(
+        _rates(R1, steps), 2 * np.ones(len(steps) - 1), atol=0.05
+    )

@@ -6,16 +6,12 @@ correctly computes gradients using the adjoint method for time-dependent problem
 """
 
 import numpy as np
-import pytest
 import ufl
-from dolfinx import fem, la, mesh
+from dolfinx import fem, la
 from dolfinx.fem.petsc import LinearProblem
 from mpi4py import MPI
 
 
-@pytest.mark.parametrize(
-    "unit_square_mesh", [mesh.CellType.triangle], indirect=True, ids=["triangle"]
-)
 def test_Heat_initial(heat_equation_evaluation):
     """
     Test gradient of J with respect to the initial condition.
@@ -40,9 +36,9 @@ def test_Heat_initial(heat_equation_evaluation):
 
         $$\\left(\\frac{\\partial F^T}{\\partial u_N}\\right) \\lambda_N = - \\frac{\\partial J^T}{\\partial u_N}$$
 
-    and subsequent adjoint equations:
+    and subsequent adjoint equations, where $F_i(u_i, u_{i-1}) = 0$ is the residual equation of time step $i$:
 
-        $$\\left(\\frac{\\partial F^T}{\\partial u_{i-1}}\\right) \\lambda_{i-1} = - \\lambda_i \\frac{\\partial F^T}{\\partial u_{i-1}}$$
+        $$\\left(\\frac{\\partial F_{i-1}}{\\partial u_{i-1}}\\right)^T \\lambda_{i-1} = - \\left(\\frac{\\partial F_i}{\\partial u_{i-1}}\\right)^T \\lambda_i$$
 
     Finally:
 

@@ -3,13 +3,14 @@
 import numpy as np
 import pytest
 import ufl
-from dolfinx import mesh
+from dolfinx import fem, mesh
 from dolfinx.fem.petsc import assemble_vector
 from mpi4py import MPI
 from petsc4py import PETSc
 from petsc4py.PETSc import ScalarType
 
-from dolfinx_adjoint import Graph, fem
+from dolfinx_adjoint import Graph
+from dolfinx_adjoint import fem as fem_ad
 
 
 def test_problem_constant_gradient_is_taken_at_the_current_value(
@@ -18,16 +19,16 @@ def test_problem_constant_gradient_is_taken_at_the_current_value(
     """The problem edge differentiates at the value of c, not its constructor argument."""
     domain = unit_square_mesh
     graph_ = Graph()
-    c = fem.Constant(domain, ScalarType(1.0), graph=graph_)
+    c = fem_ad.Constant(domain, ScalarType(1.0), graph=graph_)
     c.value = 2.0
 
     V = fem.functionspace(domain, ("Lagrange", 1))
-    uh = fem.Function(V, name="uh", graph=graph_)
+    uh = fem_ad.Function(V, name="uh", graph=graph_)
     u = ufl.TrialFunction(V)
     v = ufl.TestFunction(V)
 
     direct_solver = {"ksp_type": "preonly", "pc_type": "lu"}
-    problem = fem.petsc.LinearProblem(
+    problem = fem_ad.petsc.LinearProblem(
         c**2 * ufl.inner(u, v) * ufl.dx,
         ufl.conj(v) * ufl.dx,
         u=uh,
@@ -39,7 +40,7 @@ def test_problem_constant_gradient_is_taken_at_the_current_value(
     problem.solve(graph=graph_)
 
     J_form = ufl.inner(uh, uh) * ufl.dx
-    J = fem.assemble_scalar(fem.form(J_form, graph=graph_), graph=graph_)
+    J = fem_ad.assemble_scalar(fem_ad.form(J_form, graph=graph_), graph=graph_)
 
     (gradient,) = graph_.backprop(J, c)
 
@@ -55,15 +56,15 @@ def test_nonlinear_problem_constant_edge_gradient(
     """The scalar gradient includes the seed and contributions from every rank."""
     domain = unit_square_mesh_per_comm
     graph_ = Graph()
-    c = fem.Constant(domain, ScalarType(8.0), graph=graph_)
+    c = fem_ad.Constant(domain, ScalarType(8.0), graph=graph_)
 
     V = fem.functionspace(domain, ("Lagrange", 1))
-    uh = fem.Function(V, graph=graph_)
+    uh = fem_ad.Function(V, graph=graph_)
     # Supply the exact state, including ghosts, to test the edge without a forward solve.
     uh.x.array[:] = 2.0
     v = ufl.TestFunction(V)
     F = (uh**3 - c) * ufl.conj(v) * ufl.dx
-    problem = fem.petsc.NonlinearProblem(
+    problem = fem_ad.petsc.NonlinearProblem(
         F,
         uh,
         petsc_options_prefix="test_constant_direction_",
@@ -79,7 +80,7 @@ def test_nonlinear_problem_constant_edge_gradient(
     edge = graph_.get_edge(graph_.get_node(c), graph_.get_node(problem))
 
     x = ufl.SpatialCoordinate(domain)
-    seed = assemble_vector(fem.form((1 + x[0]) * ufl.conj(v) * ufl.dx))
+    seed = assemble_vector(fem_ad.form((1 + x[0]) * ufl.conj(v) * ufl.dx))
     try:
         seed.ghostUpdate(addv=PETSc.InsertMode.ADD, mode=PETSc.ScatterMode.REVERSE)
         edge.input_value = seed
@@ -105,14 +106,14 @@ def test_problem_constant_gradient_on_measures(
     domain = unit_square_mesh_per_comm
     graph_ = Graph()
     value = np.asarray(value, dtype=ScalarType)
-    c = fem.Constant(domain, value, graph=graph_)
+    c = fem_ad.Constant(domain, value, graph=graph_)
     measure = ufl.Measure(measure_name, domain=domain)
     measure_size = domain.comm.allreduce(
-        fem.assemble_scalar(fem.form(1.0 * measure)), op=MPI.SUM
+        fem_ad.assemble_scalar(fem_ad.form(1.0 * measure)), op=MPI.SUM
     )
 
     V = fem.functionspace(domain, ("Lagrange", 1))
-    uh = fem.Function(V, graph=graph_)
+    uh = fem_ad.Function(V, graph=graph_)
     u = ufl.TrialFunction(V)
     v = ufl.TestFunction(V)
     a = ufl.inner(u, v) * ufl.dx
@@ -121,7 +122,7 @@ def test_problem_constant_gradient_on_measures(
     L = ufl.inner(restricted_c, restricted_c) * ufl.conj(load_test) * measure
 
     # Both partial derivatives are independent of uh, so no forward solve is needed.
-    problem = fem.petsc.LinearProblem(
+    problem = fem_ad.petsc.LinearProblem(
         a,
         L,
         u=uh,
@@ -138,7 +139,7 @@ def test_problem_constant_gradient_on_measures(
     edge = graph_.get_edge(graph_.get_node(c), graph_.get_node(problem))
 
     seed = -2.5
-    adjoint_input = assemble_vector(fem.form(seed * ufl.conj(v) * ufl.dx))
+    adjoint_input = assemble_vector(fem_ad.form(seed * ufl.conj(v) * ufl.dx))
     try:
         adjoint_input.ghostUpdate(
             addv=PETSc.InsertMode.ADD, mode=PETSc.ScatterMode.REVERSE
@@ -163,12 +164,12 @@ def test_problem_without_u_replays_into_the_solution_it_holds(
     """Catch a replay that rebuilds the problem around a function the caller cannot see."""
     domain = unit_square_mesh
     graph_ = Graph()
-    c = fem.Constant(domain, ScalarType(2.0), graph=graph_)
+    c = fem_ad.Constant(domain, ScalarType(2.0), graph=graph_)
 
     V = fem.functionspace(domain, ("Lagrange", 1))
     u = ufl.TrialFunction(V)
     v = ufl.TestFunction(V)
-    problem = fem.petsc.LinearProblem(
+    problem = fem_ad.petsc.LinearProblem(
         c * ufl.inner(u, v) * ufl.dx,
         ufl.conj(v) * ufl.dx,
         petsc_options_prefix="test_problem_without_u_",
@@ -191,15 +192,15 @@ def test_problem_records_a_solution_that_is_not_in_the_graph(
     """Catch a problem built on a solution the graph does not know."""
     domain = unit_square_mesh
     graph_ = Graph()
-    c = fem.Constant(domain, ScalarType(2.0), graph=graph_)
+    c = fem_ad.Constant(domain, ScalarType(2.0), graph=graph_)
 
     V = fem.functionspace(domain, ("Lagrange", 1))
-    uh = fem.Function(V, name="uh")
+    uh = fem_ad.Function(V, name="uh")
     u = ufl.TrialFunction(V)
     v = ufl.TestFunction(V)
 
     direct_solver = {"ksp_type": "preonly", "pc_type": "lu"}
-    problem = fem.petsc.LinearProblem(
+    problem = fem_ad.petsc.LinearProblem(
         c * ufl.inner(u, v) * ufl.dx,
         ufl.conj(v) * ufl.dx,
         u=uh,
@@ -211,7 +212,7 @@ def test_problem_records_a_solution_that_is_not_in_the_graph(
     problem.solve(graph=graph_)
 
     J_form = ufl.inner(uh, uh) * ufl.dx
-    J = fem.assemble_scalar(fem.form(J_form, graph=graph_), graph=graph_)
+    J = fem_ad.assemble_scalar(fem_ad.form(J_form, graph=graph_), graph=graph_)
 
     (gradient,) = graph_.backprop(J, c)
 
@@ -229,17 +230,17 @@ def test_problem_edges_compile_the_adjoint_with_the_recorded_arguments(
     graph_ = Graph()
 
     V = fem.functionspace(unit_square_mesh, ("Lagrange", 1))
-    f = fem.Function(V, name="f", graph=graph_)
+    f = fem_ad.Function(V, name="f", graph=graph_)
     f.x.array[:] = 1.0
 
     W = fem.functionspace(submesh, ("Lagrange", 1))
-    uh = fem.Function(W, name="uh", graph=graph_)
+    uh = fem_ad.Function(W, name="uh", graph=graph_)
     u = ufl.TrialFunction(W)
     v = ufl.TestFunction(W)
     dx = ufl.Measure("dx", domain=submesh)
 
     direct_solver = {"ksp_type": "preonly", "pc_type": "lu"}
-    problem = fem.petsc.LinearProblem(
+    problem = fem_ad.petsc.LinearProblem(
         ufl.inner(u, v) * dx,
         ufl.inner(f, v) * dx,
         u=uh,
@@ -252,8 +253,8 @@ def test_problem_edges_compile_the_adjoint_with_the_recorded_arguments(
     problem.solve(graph=graph_)
 
     J_form = ufl.inner(uh, uh) * dx
-    J = fem.assemble_scalar(
-        fem.form(J_form, entity_maps=[cell_map], graph=graph_), graph=graph_
+    J = fem_ad.assemble_scalar(
+        fem_ad.form(J_form, entity_maps=[cell_map], graph=graph_), graph=graph_
     )
 
     (gradient,) = graph_.backprop(J, f)

@@ -7,11 +7,12 @@ from dataclasses import dataclass
 import numpy as np
 import pytest
 import ufl
-from dolfinx import mesh
+from dolfinx import fem, mesh
 from mpi4py import MPI
 from petsc4py.PETSc import ScalarType
 
-from dolfinx_adjoint import Graph, fem
+from dolfinx_adjoint import Graph
+from dolfinx_adjoint import fem as fem_ad
 
 
 @pytest.fixture(
@@ -30,10 +31,10 @@ class PoissonEvaluation:
 
     problem: PoissonProblem
     graph: Graph | None
-    u: fem.Function
-    f: fem.Function
-    nu: fem.Constant
-    u_D: fem.Function
+    u: fem_ad.Function
+    f: fem_ad.Function
+    nu: fem_ad.Constant
+    u_D: fem_ad.Function
     F: ufl.Form
     J_form: ufl.Form
     J: float  # Rank-local assembled object, retained for graph lookup by id.
@@ -78,12 +79,12 @@ class PoissonProblem:
                     ]
                 )
             )
-            fixed_value = fem.Function(self.V, name="u_D_fixed")
+            fixed_value = fem_ad.Function(self.V, name="u_D_fixed")
             fixed_value.x.array[:] = 1.0
             self.fixed_bcs = [
-                fem.dirichletbc(fixed_value, boundary_dofs_r),
-                fem.dirichletbc(fixed_value, boundary_dofs_t),
-                fem.dirichletbc(fixed_value, boundary_dofs_b),
+                fem_ad.dirichletbc(fixed_value, boundary_dofs_r),
+                fem_ad.dirichletbc(fixed_value, boundary_dofs_t),
+                fem_ad.dirichletbc(fixed_value, boundary_dofs_b),
             ]
         elif boundary_condition == "full_boundary":
             exterior_facets = mesh.exterior_facet_indices(domain.topology)
@@ -106,9 +107,9 @@ class PoissonProblem:
     def evaluate(
         self,
         *,
-        f: fem.Function | None = None,
+        f: fem_ad.Function | None = None,
         nu: float = 1.0,
-        u_D: fem.Function | None = None,
+        u_D: fem_ad.Function | None = None,
         graph: Graph | None = None,
     ) -> PoissonEvaluation:
         """Solve the problem and assemble J at the given control values.
@@ -125,8 +126,8 @@ class PoissonProblem:
             The state, functional and forms of this evaluation.
 
         """
-        uh = fem.Function(self.V, name="uₕ", graph=graph)
-        forcing = fem.Function(self.W, name="f", graph=graph)
+        uh = fem_ad.Function(self.V, name="uₕ", graph=graph)
+        forcing = fem_ad.Function(self.W, name="f", graph=graph)
 
         if f is None:
             forcing.interpolate(lambda x: x[0] + x[1])
@@ -134,9 +135,9 @@ class PoissonProblem:
             f.x.petsc_vec.copy(forcing.x.petsc_vec)
         forcing.x.scatter_forward()
 
-        diffusion = fem.Constant(self.domain, ScalarType(nu), name="ν", graph=graph)
+        diffusion = fem_ad.Constant(self.domain, ScalarType(nu), name="ν", graph=graph)
 
-        boundary_value = fem.Function(self.V, name="u_D", graph=graph)
+        boundary_value = fem_ad.Function(self.V, name="u_D", graph=graph)
         if u_D is None:
             boundary_value.x.array[:] = 1.0
         else:
@@ -151,12 +152,12 @@ class PoissonProblem:
         # Write the residual directly to avoid creating a UFL Replacer cycle.
         F = diffusion * ufl.inner(ufl.grad(uh), ufl.grad(v)) * ufl.dx - L
         bcs = [
-            fem.dirichletbc(boundary_value, self.control_dofs, graph=graph),
+            fem_ad.dirichletbc(boundary_value, self.control_dofs, graph=graph),
             *self.fixed_bcs,
         ]
 
         if self.solver == "nonlinear":
-            problem = fem.petsc.NonlinearProblem(
+            problem = fem_ad.petsc.NonlinearProblem(
                 F,
                 uh,
                 bcs=bcs,
@@ -171,7 +172,7 @@ class PoissonProblem:
                 graph=graph,
             )
         else:
-            problem = fem.petsc.LinearProblem(
+            problem = fem_ad.petsc.LinearProblem(
                 a,
                 L,
                 u=uh,
@@ -185,12 +186,12 @@ class PoissonProblem:
 
         x = ufl.SpatialCoordinate(self.domain)
         g = (1 / (2 * np.pi**2)) * ufl.sin(np.pi * x[0]) * ufl.sin(np.pi * x[1])
-        alpha = fem.Constant(self.domain, ScalarType(1e-6), name="α")
+        alpha = fem_ad.Constant(self.domain, ScalarType(1e-6), name="α")
         J_form = (
             0.5 * ufl.inner(uh - g, uh - g) * ufl.dx
             + alpha * ufl.inner(forcing, forcing) * ufl.dx
         )
-        J = fem.assemble_scalar(fem.form(J_form, graph=graph), graph=graph)
+        J = fem_ad.assemble_scalar(fem_ad.form(J_form, graph=graph), graph=graph)
         value = self.domain.comm.allreduce(J, op=MPI.SUM)
         return PoissonEvaluation(
             problem=self,

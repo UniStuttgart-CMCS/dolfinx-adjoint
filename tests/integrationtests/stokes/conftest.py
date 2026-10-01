@@ -9,11 +9,13 @@ import numpy as np
 import pytest
 import ufl
 from basix.ufl import element, mixed_element
+from dolfinx import fem
 from dolfinx.io import gmsh as gmshio
 from mpi4py import MPI
 from petsc4py.PETSc import ScalarType
 
-from dolfinx_adjoint import Graph, fem
+from dolfinx_adjoint import Graph
+from dolfinx_adjoint import fem as fem_ad
 
 
 @pytest.fixture(scope="module")
@@ -94,9 +96,9 @@ class StokesEvaluation:
 
     problem: StokesProblem
     graph: Graph | None
-    up: fem.Function
-    g: fem.Function
-    nu: fem.Constant
+    up: fem_ad.Function
+    g: fem_ad.Function
+    nu: fem_ad.Constant
     F: ufl.Form
     J_form: ufl.Form
     J: float  # Rank-local assembled object, retained for graph lookup by id.
@@ -122,15 +124,15 @@ class StokesProblem:
         V_p, _ = self.V.sub(1).collapse()
 
         # Boundary conditions
-        h = fem.Function(self.V_u, name="f")
+        h = fem_ad.Function(self.V_u, name="f")
         speed = 0.3
         h.interpolate(
             lambda x: np.stack(
                 (speed * 4 * x[1] * (height - x[1]) / (height * height), 0.0 * x[0])
             )
         )
-        noslip = fem.Function(self.V_u, name="noslip")
-        outflow = fem.Function(V_p, name="outflow")
+        noslip = fem_ad.Function(self.V_u, name="noslip")
+        outflow = fem_ad.Function(V_p, name="outflow")
 
         dofs_walls = fem.locate_dofs_topological(
             (self.V.sub(0), self.V_u), 1, ft.indices[ft.values == wall_marker]
@@ -156,9 +158,9 @@ class StokesProblem:
             )
         )
         self.fixed_bcs = [
-            fem.dirichletbc(h, dofs_inflow, self.V.sub(0)),
-            fem.dirichletbc(noslip, dofs_walls, self.V.sub(0)),
-            fem.dirichletbc(outflow, dofs_outflow, self.V.sub(1)),
+            fem_ad.dirichletbc(h, dofs_inflow, self.V.sub(0)),
+            fem_ad.dirichletbc(noslip, dofs_walls, self.V.sub(0)),
+            fem_ad.dirichletbc(outflow, dofs_outflow, self.V.sub(1)),
         ]
         self.dObs = ufl.Measure(
             "ds", domain=self.domain, subdomain_data=ft, subdomain_id=obstacle_marker
@@ -176,7 +178,7 @@ class StokesProblem:
     def evaluate(
         self,
         *,
-        g: fem.Function | None = None,
+        g: fem_ad.Function | None = None,
         nu: float = 1.0,
         graph: Graph | None = None,
     ) -> StokesEvaluation:
@@ -192,20 +194,20 @@ class StokesProblem:
             The state, functional and forms of this evaluation.
 
         """
-        up = fem.Function(self.V, name="up", graph=graph)
+        up = fem_ad.Function(self.V, name="up", graph=graph)
         u, p = ufl.split(up)
 
-        obstacle_value = fem.Function(self.V_u, name="g", graph=graph)
+        obstacle_value = fem_ad.Function(self.V_u, name="g", graph=graph)
         if g is not None:
             g.x.petsc_vec.copy(obstacle_value.x.petsc_vec)
             obstacle_value.x.scatter_forward()
 
-        viscosity = fem.Constant(self.domain, ScalarType(nu), name="ν", graph=graph)
+        viscosity = fem_ad.Constant(self.domain, ScalarType(nu), name="ν", graph=graph)
 
         # Parameters
         alpha = 10.0
         beta = 1.0e-3
-        f = fem.Function(self.V_u, name="f")
+        f = fem_ad.Function(self.V_u, name="f")
 
         # Variational formulation
         v, q = ufl.split(ufl.TestFunction(self.V))
@@ -217,13 +219,13 @@ class StokesProblem:
         L = ufl.inner(f, v) * ufl.dx
         F = a - L
         bcs = [
-            fem.dirichletbc(
+            fem_ad.dirichletbc(
                 obstacle_value, self.dofs_obstacle, self.V.sub(0), graph=graph
             ),
             *self.fixed_bcs,
         ]
 
-        problem = fem.petsc.NonlinearProblem(
+        problem = fem_ad.petsc.NonlinearProblem(
             F,
             up,
             bcs=bcs,
@@ -243,7 +245,7 @@ class StokesProblem:
             + alpha / 2 * ufl.inner(obstacle_value, obstacle_value) * self.dObs
             + beta / 2 * ufl.inner(p, p) * ufl.dx
         )
-        J = fem.assemble_scalar(fem.form(J_form, graph=graph), graph=graph)
+        J = fem_ad.assemble_scalar(fem_ad.form(J_form, graph=graph), graph=graph)
         value = self.domain.comm.allreduce(J, op=MPI.SUM)
         return StokesEvaluation(
             problem=self,

@@ -3,11 +3,12 @@
 import numpy as np
 import pytest
 import ufl
-from dolfinx import mesh
+from dolfinx import fem, mesh
 from mpi4py import MPI
 from petsc4py.PETSc import ScalarType
 
-from dolfinx_adjoint import Graph, fem
+from dolfinx_adjoint import Graph
+from dolfinx_adjoint import fem as fem_ad
 
 
 def test_form_constant_edge_gradient_without_coefficient(
@@ -21,11 +22,11 @@ def test_form_constant_edge_gradient_without_coefficient(
     """
     domain = unit_square_mesh_per_comm
     graph_ = Graph()
-    c = fem.Constant(domain, ScalarType(1.0), graph=graph_)
+    c = fem_ad.Constant(domain, ScalarType(1.0), graph=graph_)
     c.value = 3.0
 
     J_form = 0.5 * c**2 * ufl.dx(domain=domain)
-    J = fem.assemble_scalar(fem.form(J_form, graph=graph_), graph=graph_)
+    J = fem_ad.assemble_scalar(fem_ad.form(J_form, graph=graph_), graph=graph_)
 
     seed = -2.5
     (gradient,) = graph_.backprop(J, c, grad_outputs=seed)
@@ -52,21 +53,21 @@ def test_form_constant_gradient_on_measures(
     domain = unit_square_mesh_per_comm
     graph_ = Graph()
     value = np.asarray(value, dtype=ScalarType)
-    c = fem.Constant(domain, value, graph=graph_)
+    c = fem_ad.Constant(domain, value, graph=graph_)
     measure = ufl.Measure(measure_name, domain=domain)
 
     V = fem.functionspace(domain, ("Lagrange", 1))
-    u = fem.Function(V, graph=graph_)
+    u = fem_ad.Function(V, graph=graph_)
     u.interpolate(lambda x: 1.0 + x[0])
     u.x.scatter_forward()
     weight = ufl.avg(u) if measure_name == "dS" else u
     weighted_measure = domain.comm.allreduce(
-        fem.assemble_scalar(fem.form(weight * measure)), op=MPI.SUM
+        fem_ad.assemble_scalar(fem_ad.form(weight * measure)), op=MPI.SUM
     )
 
     restricted_c = c("+") if measure_name == "dS" else c
     J_form = ufl.inner(restricted_c, restricted_c) * weight * measure
-    J = fem.assemble_scalar(fem.form(J_form, graph=graph_), graph=graph_)
+    J = fem_ad.assemble_scalar(fem_ad.form(J_form, graph=graph_), graph=graph_)
     seed = -2.5
     (gradient,) = graph_.backprop(J, c, grad_outputs=seed)
 
@@ -91,11 +92,11 @@ def test_form_is_replayed_with_the_arguments_it_was_recorded_with(
     graph_ = Graph()
 
     V = fem.functionspace(unit_square_mesh, ("Lagrange", 1))
-    f = fem.Function(V, graph=graph_)
+    f = fem_ad.Function(V, graph=graph_)
     f.x.array[:] = 3.0
 
-    J = fem.assemble_scalar(
-        fem.form(
+    J = fem_ad.assemble_scalar(
+        fem_ad.form(
             ufl.inner(f, f) * ufl.dx(domain=submesh),
             entity_maps=[cell_map],
             graph=graph_,
@@ -123,14 +124,14 @@ def test_form_edges_compile_the_derivative_with_the_recorded_arguments(
     graph_ = Graph()
 
     V = fem.functionspace(unit_square_mesh, ("Lagrange", 1))
-    f = fem.Function(V, graph=graph_)
+    f = fem_ad.Function(V, graph=graph_)
     f.x.array[:] = 3.0
-    c = fem.Constant(
+    c = fem_ad.Constant(
         unit_square_mesh, np.asarray((3.0,), dtype=ScalarType), graph=graph_
     )
 
-    J = fem.assemble_scalar(
-        fem.form(
+    J = fem_ad.assemble_scalar(
+        fem_ad.form(
             (ufl.inner(f, f) + ufl.inner(c, c)) * ufl.dx(domain=submesh),
             entity_maps=[cell_map],
             graph=graph_,

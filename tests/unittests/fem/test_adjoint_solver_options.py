@@ -1,13 +1,14 @@
 import numpy as np
 import pytest
 import ufl
-from dolfinx import mesh
+from dolfinx import fem, mesh
 from dolfinx.fem.petsc import create_vector
 from mpi4py import MPI
 from petsc4py import PETSc
 from petsc4py.PETSc import ScalarType
 
-from dolfinx_adjoint import Graph, fem
+from dolfinx_adjoint import Graph
+from dolfinx_adjoint import fem as fem_ad
 from dolfinx_adjoint.fem.petsc import AdjointProblem
 from dolfinx_adjoint.graph import Edge
 
@@ -25,22 +26,22 @@ def adjoint_edge(request, option) -> Edge:
     V = fem.functionspace(domain, ("Lagrange", 1))
     W = fem.functionspace(domain, ("DG", 0))
 
-    uh = fem.Function(V, name="uh", graph=graph_)
+    uh = fem_ad.Function(V, name="uh", graph=graph_)
     u = ufl.TrialFunction(V)
     v = ufl.TestFunction(V)
 
-    f = fem.Function(W, name="f", graph=graph_)
+    f = fem_ad.Function(W, name="f", graph=graph_)
     f.x.array[:] = 1.0
-    c = fem.Constant(domain, ScalarType(2.0), name="c", graph=graph_)
+    c = fem_ad.Constant(domain, ScalarType(2.0), name="c", graph=graph_)
 
-    uD = fem.Function(V, name="uD", graph=graph_)
+    uD = fem_ad.Function(V, name="uD", graph=graph_)
     uD.x.array[:] = 1.0
     boundary_dofs = fem.locate_dofs_geometrical(
         V, lambda x: np.isclose(x[0], 0.0) | np.isclose(x[0], 1.0)
     )
-    bcs = [fem.dirichletbc(uD, boundary_dofs, graph=graph_)]
+    bcs = [fem_ad.dirichletbc(uD, boundary_dofs, graph=graph_)]
 
-    problem = fem.petsc.LinearProblem(
+    problem = fem_ad.petsc.LinearProblem(
         c * ufl.inner(u, v) * ufl.dx,
         ufl.inner(f, v) * ufl.dx,
         u=uh,
@@ -72,7 +73,7 @@ def adjoint_problem_data():
     b = create_vector(V)
     b.set(0.0)
     try:
-        yield a, b, fem.Function(V)
+        yield a, b, fem_ad.Function(V)
     finally:
         b.destroy()
 

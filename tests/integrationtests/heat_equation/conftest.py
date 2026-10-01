@@ -7,11 +7,12 @@ from dataclasses import dataclass
 import numpy as np
 import pytest
 import ufl
-from dolfinx import mesh
+from dolfinx import fem, mesh
 from mpi4py import MPI
 from petsc4py.PETSc import ScalarType
 
-from dolfinx_adjoint import Graph, fem
+from dolfinx_adjoint import Graph
+from dolfinx_adjoint import fem as fem_ad
 
 
 @dataclass
@@ -20,10 +21,10 @@ class HeatEquationEvaluation:
 
     problem: HeatEquationProblem
     graph: Graph | None
-    initial_guess: fem.Function
-    u_prev: fem.Function
-    u_next: fem.Function
-    u_iterations: list[fem.Function]  # States of all time steps, for the test.
+    initial_guess: fem_ad.Function
+    u_prev: fem_ad.Function
+    u_next: fem_ad.Function
+    u_iterations: list[fem_ad.Function]  # States of all time steps, for the test.
     F: ufl.Form
     J_form: ufl.Form
     J: float  # Rank-local assembled object, retained for graph lookup by id.
@@ -38,7 +39,7 @@ class HeatEquationProblem:
         self.V = fem.functionspace(domain, ("Lagrange", 1))
         self.dt = 0.01
         self.T = 0.05
-        self.dt_constant = fem.Constant(domain, ScalarType(self.dt))
+        self.dt_constant = fem_ad.Constant(domain, ScalarType(self.dt))
 
         # We use a direct solve for both the forward and adjoint problems with MUMPS to keep the same factorisation across rank counts.
         self.petsc_options = {
@@ -49,7 +50,7 @@ class HeatEquationProblem:
         }
 
         # Create true data set
-        true_initial = fem.Function(self.V, name="u_true_initial")
+        true_initial = fem_ad.Function(self.V, name="u_true_initial")
         true_initial.interpolate(
             lambda x: np.sin(2 * np.pi * x[0]) * np.sin(2 * np.pi * x[1])
         )
@@ -64,7 +65,7 @@ class HeatEquationProblem:
         )
         L = ufl.inner(u_prev / self.dt_constant, v) * ufl.dx
 
-        problem = fem.petsc.LinearProblem(
+        problem = fem_ad.petsc.LinearProblem(
             a,
             L,
             u=u_next,
@@ -82,7 +83,7 @@ class HeatEquationProblem:
     def evaluate(
         self,
         *,
-        initial_guess: fem.Function | None = None,
+        initial_guess: fem_ad.Function | None = None,
         graph: Graph | None = None,
     ) -> HeatEquationEvaluation:
         """Step the problem through time and assemble J at the given control value.
@@ -98,7 +99,7 @@ class HeatEquationProblem:
 
         """
 
-        initial = fem.Function(self.V, name="initial_guess", graph=graph)
+        initial = fem_ad.Function(self.V, name="initial_guess", graph=graph)
         if initial_guess is None:
             initial.interpolate(
                 lambda x: 15.0 * x[0] * (1.0 - x[0]) * x[1] * (1.0 - x[1])
@@ -108,7 +109,7 @@ class HeatEquationProblem:
         initial.x.scatter_forward()
 
         u_prev = initial.copy(graph=graph, name="u_prev")
-        u_next = fem.Function(self.V, name="u_next", graph=graph)
+        u_next = fem_ad.Function(self.V, name="u_next", graph=graph)
         u = ufl.TrialFunction(self.V)
         v = ufl.TestFunction(self.V)
 
@@ -132,7 +133,7 @@ class HeatEquationProblem:
         u_iterations = [initial.copy()]
         while t < self.T:
             i += 1
-            problem = fem.petsc.LinearProblem(
+            problem = fem_ad.petsc.LinearProblem(
                 a,
                 L,
                 u=u_next,
@@ -148,12 +149,12 @@ class HeatEquationProblem:
             # Storing the iterations for later visualization and testing
             u_iterations.append(u_next.copy())
 
-        alpha = fem.Constant(self.domain, ScalarType(1.0e-6))
+        alpha = fem_ad.Constant(self.domain, ScalarType(1.0e-6))
         J_form = (
             ufl.inner(self.true_data - u_next, self.true_data - u_next) * ufl.dx
             + alpha * ufl.inner(ufl.grad(initial), ufl.grad(initial)) * ufl.dx
         )
-        J = fem.assemble_scalar(fem.form(J_form, graph=graph), graph=graph)
+        J = fem_ad.assemble_scalar(fem_ad.form(J_form, graph=graph), graph=graph)
         value = self.domain.comm.allreduce(J, op=MPI.SUM)
         return HeatEquationEvaluation(
             problem=self,

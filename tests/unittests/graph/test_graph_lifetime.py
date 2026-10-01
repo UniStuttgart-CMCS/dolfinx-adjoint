@@ -3,8 +3,10 @@
 import weakref
 
 import pytest
+from dolfinx import fem
 
-from dolfinx_adjoint import Edge, Graph, Node, fem
+from dolfinx_adjoint import Edge, Graph, Node
+from dolfinx_adjoint import fem as fem_ad
 
 
 class _Value:
@@ -21,7 +23,7 @@ def test_assigning_a_function_from_itself_records_no_self_loop(
     """Catch reused default versions, ignored explicit versions, or self-loop edges."""
     graph_ = Graph()
     V = fem.functionspace(unit_square_mesh, ("Lagrange", 1))
-    u = fem.Function(V, name="u", graph=graph_)
+    u = fem_ad.Function(V, name="u", graph=graph_)
 
     nodes = [graph_.get_node(u)]
     for version in versions:

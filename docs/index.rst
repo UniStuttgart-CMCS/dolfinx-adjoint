@@ -129,18 +129,19 @@ For demos and tests, use ``pip install -e ".[all]"``.
 
 .. code-block:: python
 
-   from dolfinx_adjoint import Graph, fem
+   from dolfinx_adjoint import Graph
+   from dolfinx_adjoint import fem as fem_ad
 
    graph_ = Graph()
 
    # Set up your DOLFINx problem, passing graph= to track operations
-   f  = fem.Function(W, name="f", graph=graph_)
-   uh = fem.Function(V, name="u", graph=graph_)
+   f  = fem_ad.Function(W, name="f", graph=graph_)
+   uh = fem_ad.Function(V, name="u", graph=graph_)
 
-   problem = fem.petsc.LinearProblem(a, L, u=uh, bcs=bcs, graph=graph_)
+   problem = fem_ad.petsc.LinearProblem(a, L, u=uh, bcs=bcs, graph=graph_)
    problem.solve(graph=graph_)
 
-   J = fem.assemble_scalar(fem.form(J_form, graph=graph_), graph=graph_)
+   J = fem_ad.assemble_scalar(fem_ad.form(J_form, graph=graph_), graph=graph_)
 
    # Compute the gradient
    (dJdf,) = graph_.backprop(J, f)

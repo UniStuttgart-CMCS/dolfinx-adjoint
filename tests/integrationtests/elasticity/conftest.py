@@ -8,11 +8,12 @@ import numpy as np
 import pytest
 import ufl
 from basix.ufl import element
-from dolfinx import mesh
+from dolfinx import fem, mesh
 from mpi4py import MPI
 from petsc4py.PETSc import ScalarType
 
-from dolfinx_adjoint import Graph, fem
+from dolfinx_adjoint import Graph
+from dolfinx_adjoint import fem as fem_ad
 
 
 @pytest.fixture(scope="module")
@@ -35,8 +36,8 @@ class PlaneElasticityEvaluation:
 
     problem: PlaneElasticityProblem
     graph: Graph | None
-    u: fem.Function
-    u_D: fem.Function
+    u: fem_ad.Function
+    u_D: fem_ad.Function
     J: float  # Rank-local assembled object, retained for graph lookup by id.
     value: float  # Functional summed over the mesh communicator.
 
@@ -65,7 +66,7 @@ class PlaneElasticityProblem:
     def evaluate(
         self,
         *,
-        u_D: fem.Function | None = None,
+        u_D: fem_ad.Function | None = None,
         graph: Graph | None = None,
     ) -> PlaneElasticityEvaluation:
         """Solve the problem and assemble J at the given control value.
@@ -79,9 +80,9 @@ class PlaneElasticityProblem:
             The state and functional of this evaluation.
 
         """
-        uh = fem.Function(self.V, name="u", graph=graph)
+        uh = fem_ad.Function(self.V, name="u", graph=graph)
 
-        uD_control = fem.Function(self.V, name="u_D", graph=graph)
+        uD_control = fem_ad.Function(self.V, name="u_D", graph=graph)
         if u_D is None:
             uD_control.interpolate(
                 lambda x: np.stack((0.5 + 0.0 * x[0], 0.25 + 0.0 * x[1]))
@@ -90,8 +91,8 @@ class PlaneElasticityProblem:
             u_D.x.petsc_vec.copy(uD_control.x.petsc_vec)
         uD_control.x.scatter_forward()
 
-        mu = fem.Constant(self.domain, ScalarType(1.0), name="μ")
-        lambda_ = fem.Constant(self.domain, ScalarType(1.25), name="λ")
+        mu = fem_ad.Constant(self.domain, ScalarType(1.0), name="μ")
+        lambda_ = fem_ad.Constant(self.domain, ScalarType(1.25), name="λ")
         rho = 1.0
         g = 0.016
 
@@ -105,12 +106,12 @@ class PlaneElasticityProblem:
 
         u = ufl.TrialFunction(self.V)
         v = ufl.TestFunction(self.V)
-        f = fem.Constant(self.domain, ScalarType((0.0, -rho * g)))
+        f = fem_ad.Constant(self.domain, ScalarType((0.0, -rho * g)))
         a = ufl.inner(sigma(u), epsilon(v)) * ufl.dx
         L = ufl.dot(f, v) * ufl.dx
-        bcs = [fem.dirichletbc(uD_control, self.control_dofs, graph=graph)]
+        bcs = [fem_ad.dirichletbc(uD_control, self.control_dofs, graph=graph)]
 
-        problem = fem.petsc.LinearProblem(
+        problem = fem_ad.petsc.LinearProblem(
             a,
             L,
             u=uh,
@@ -123,7 +124,7 @@ class PlaneElasticityProblem:
         problem.solve(graph=graph)
 
         J_form = 0.5 * ufl.inner(uh, uh) * ufl.dx
-        J = fem.assemble_scalar(fem.form(J_form, graph=graph), graph=graph)
+        J = fem_ad.assemble_scalar(fem_ad.form(J_form, graph=graph), graph=graph)
         value = self.domain.comm.allreduce(J, op=MPI.SUM)
         return PlaneElasticityEvaluation(
             problem=self,
@@ -147,9 +148,9 @@ class LinearElasticityEvaluation:
 
     problem: LinearElasticityProblem
     graph: Graph | None
-    u: fem.Function
-    lambda_: fem.Constant
-    mu: fem.Constant
+    u: fem_ad.Function
+    lambda_: fem_ad.Constant
+    mu: fem_ad.Constant
     F: ufl.Form
     J_form: ufl.Form
     J: float  # Rank-local assembled object, retained for graph lookup by id.
@@ -170,8 +171,8 @@ class LinearElasticityProblem:
 
         vector_element = element("Lagrange", domain.basix_cell(), 1, shape=(3,))
         self.V = fem.functionspace(domain, vector_element)
-        self.f = fem.Constant(domain, ScalarType((0, 0, -rho * g)))
-        self.T = fem.Constant(domain, ScalarType((0, 0, 0)))
+        self.f = fem_ad.Constant(domain, ScalarType((0, 0, -rho * g)))
+        self.T = fem_ad.Constant(domain, ScalarType((0, 0, 0)))
 
         # Boundary condition describing the clamped left side of the beam
         boundary_facets = mesh.locate_entities_boundary(
@@ -181,7 +182,7 @@ class LinearElasticityProblem:
             self.V, domain.topology.dim - 1, boundary_facets
         )
         self.fixed_bcs = [
-            fem.dirichletbc(
+            fem_ad.dirichletbc(
                 np.array([0, 0, 0], dtype=ScalarType), self.bcs_dofs, self.V
             )
         ]
@@ -212,9 +213,9 @@ class LinearElasticityProblem:
             The state, functional and forms of this evaluation.
 
         """
-        uh = fem.Function(self.V, name="Deformation", graph=graph)
-        lame_lambda = fem.Constant(self.domain, ScalarType(lambda_), graph=graph)
-        lame_mu = fem.Constant(self.domain, ScalarType(mu), graph=graph)
+        uh = fem_ad.Function(self.V, name="Deformation", graph=graph)
+        lame_lambda = fem_ad.Constant(self.domain, ScalarType(lambda_), graph=graph)
+        lame_mu = fem_ad.Constant(self.domain, ScalarType(mu), graph=graph)
 
         def sigma(w):
             return lame_lambda * ufl.nabla_div(w) * ufl.Identity(
@@ -230,7 +231,7 @@ class LinearElasticityProblem:
         # Write the residual directly to avoid creating a UFL Replacer cycle.
         F = ufl.inner(sigma(uh), ufl.sym(ufl.grad(v))) * ufl.dx - L
 
-        problem = fem.petsc.LinearProblem(
+        problem = fem_ad.petsc.LinearProblem(
             a,
             L,
             u=uh,
@@ -243,7 +244,7 @@ class LinearElasticityProblem:
         problem.solve(graph=graph)
 
         J_form = ufl.inner(uh, uh) * ufl.dx
-        J = fem.assemble_scalar(fem.form(J_form, graph=graph), graph=graph)
+        J = fem_ad.assemble_scalar(fem_ad.form(J_form, graph=graph), graph=graph)
         value = self.domain.comm.allreduce(J, op=MPI.SUM)
         return LinearElasticityEvaluation(
             problem=self,

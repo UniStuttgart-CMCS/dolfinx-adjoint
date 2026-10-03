@@ -87,70 +87,7 @@ class LinearProblem(LinearProblemBase):
         # By definition, the trial function is always the second argument in the form, thus F_form.arguments()[1] is used to identify the trial function.
         F_form = ufl.replace(F_form, {F_form.arguments()[1]: u})
 
-        # Creating and adding edges to the graph if the coefficients are in the graph
-        for coefficient in F_form.coefficients():
-            if coefficient == u:
-                continue
-            coefficient_node = _graph.get_node(coefficient)
-            if not coefficient_node == None:
-                # The graph is referenced weakly: it owns this edge, and the edge only
-                # needs it to look up the state after the solve, which does not exist yet.
-                adjoint_function = fem.Function(u.function_space, name="adjoint_rhs")
-                ctx = [
-                    F_form,
-                    u_node,
-                    coefficient,
-                    arguments.get("bcs"),
-                    weakref.ref(_graph),
-                    adjoint_function,
-                ]
-                coefficient_edge = Problem_Coefficient_Edge(
-                    coefficient_node, problem_node, ctx=ctx
-                )
-                _graph.add_edge(coefficient_edge)
-                problem_node.append_gradFuncs(coefficient_edge)
-                coefficient_edge.set_next_functions(coefficient_node.get_gradFuncs())
-
-        # Creating and adding edges to the graph if the constants are in the graph
-        for constant in F_form.constants():
-            constant_node = _graph.get_node(constant)
-            if not constant_node == None:
-                R = fem.functionspace(
-                    constant.domain,
-                    real_element(
-                        constant.domain.basix_cell(), value_shape=constant.ufl_shape
-                    ),
-                )
-                function = fem.Function(R, dtype=constant.dtype)
-                adjoint_function = fem.Function(u.function_space, name="adjoint_rhs")
-                ctx = [
-                    F_form,
-                    u_node,
-                    constant,
-                    arguments.get("bcs"),
-                    function,
-                    adjoint_function,
-                ]
-                constant_edge = Problem_Constant_Edge(
-                    constant_node, problem_node, ctx=ctx
-                )
-                _graph.add_edge(constant_edge)
-                problem_node.append_gradFuncs(constant_edge)
-                constant_edge.set_next_functions(constant_node.get_gradFuncs())
-
-        # Creating and adding edges to the graph if the boundary conditions are in the graph
-        if arguments.get("bcs") is not None:
-            for bc in arguments.get("bcs"):
-                bc_node = _graph.get_node(bc)
-                if not bc_node == None:
-                    adjoint_function = fem.Function(
-                        u.function_space, name="adjoint_rhs"
-                    )
-                    ctx = [F_form, u_node, arguments.get("bcs"), adjoint_function]
-                    bc_edge = Problem_Boundary_Edge(bc_node, problem_node, ctx=ctx)
-                    _graph.add_edge(bc_edge)
-                    problem_node.append_gradFuncs(bc_edge)
-                    bc_edge.set_next_functions(bc_node.get_gradFuncs())
+        problem_node._record_problem(_graph, F_form, u, u_node)
 
     def solve(self, *args, **kwargs):
         """OVERLOADS: :py:meth:`dolfinx.fem.petsc.LinearProblem.solve`
@@ -256,70 +193,7 @@ class NonlinearProblem(NonlinearProblemBase):
         )
         _graph.add_node(problem_node)
 
-        # Creating and adding edges to the graph if the coefficients are in the graph
-        for coefficient in F_form.coefficients():
-            if coefficient == u:
-                continue
-            coefficient_node = _graph.get_node(coefficient)
-            if not coefficient_node == None:
-                # The graph is referenced weakly: it owns this edge, and the edge only
-                # needs it to look up the state after the solve, which does not exist yet.
-                function = fem.Function(u.function_space, name="adjoint_rhs")
-                ctx = [
-                    F_form,
-                    u_node,
-                    coefficient,
-                    arguments.get("bcs"),
-                    weakref.ref(_graph),
-                    function,
-                ]
-                coefficient_edge = Problem_Coefficient_Edge(
-                    coefficient_node, problem_node, ctx=ctx
-                )
-                _graph.add_edge(coefficient_edge)
-                problem_node.append_gradFuncs(coefficient_edge)
-                coefficient_edge.set_next_functions(coefficient_node.get_gradFuncs())
-
-        # Creating and adding edges to the graph if the constants are in the graph
-        for constant in F_form.constants():
-            constant_node = _graph.get_node(constant)
-            if not constant_node == None:
-                R = fem.functionspace(
-                    constant.domain,
-                    real_element(
-                        constant.domain.basix_cell(), value_shape=constant.ufl_shape
-                    ),
-                )
-                function = fem.Function(R, dtype=constant.dtype)
-                adjoint_function = fem.Function(u.function_space, name="adjoint_rhs")
-                ctx = [
-                    F_form,
-                    u_node,
-                    constant,
-                    arguments.get("bcs"),
-                    function,
-                    adjoint_function,
-                ]
-                constant_edge = Problem_Constant_Edge(
-                    constant_node, problem_node, ctx=ctx
-                )
-                _graph.add_edge(constant_edge)
-                problem_node.append_gradFuncs(constant_edge)
-                constant_edge.set_next_functions(constant_node.get_gradFuncs())
-
-        # Creating and adding edges to the graph if the boundary conditions are in the graph
-        if arguments.get("bcs") is not None:
-            for bc in arguments.get("bcs"):
-                bc_node = _graph.get_node(bc)
-                if not bc_node == None:
-                    adjoint_function = fem.Function(
-                        u.function_space, name="adjoint_rhs"
-                    )
-                    ctx = [F_form, u_node, arguments.get("bcs"), adjoint_function]
-                    bc_edge = Problem_Boundary_Edge(bc_node, problem_node, ctx=ctx)
-                    _graph.add_edge(bc_edge)
-                    problem_node.append_gradFuncs(bc_edge)
-                    bc_edge.set_next_functions(bc_node.get_gradFuncs())
+        problem_node._record_problem(_graph, F_form, u, u_node)
 
     def solve(self, *args, **kwargs):
         """OVERLOADS: :py:meth:`dolfinx.fem.petsc.NonlinearProblem.solve`
@@ -359,7 +233,83 @@ class NonlinearProblem(NonlinearProblemBase):
         return super().solve(*args, **kwargs)
 
 
-class LinearProblemNode(graph.AbstractNode):
+class ProblemNode(graph.AbstractNode):
+    """The edge recording shared by linear and nonlinear problem nodes."""
+
+    def _record_problem(self, _graph, F_form, u, u_node):
+        """Record the edges into this problem node during construction.
+
+        Args:
+            _graph: The explicit graph receiving the edges.
+            F_form: The residual form whose dependencies are recorded.
+            u: The solution function, excluded from coefficient dependencies.
+            u_node: The recorded solution node used by the edge contexts.
+        """
+        # Creating and adding edges to the graph if the coefficients are in the graph
+        for coefficient in F_form.coefficients():
+            if coefficient == u:
+                continue
+            coefficient_node = _graph.get_node(coefficient)
+            if not coefficient_node == None:
+                # The graph is referenced weakly: it owns this edge, and the edge only
+                # needs it to look up the state after the solve, which does not exist yet.
+                adjoint_function = fem.Function(u.function_space, name="adjoint_rhs")
+                ctx = [
+                    F_form,
+                    u_node,
+                    coefficient,
+                    self.kwargs.get("bcs"),
+                    weakref.ref(_graph),
+                    adjoint_function,
+                ]
+                coefficient_edge = Problem_Coefficient_Edge(
+                    coefficient_node, self, ctx=ctx
+                )
+                _graph.add_edge(coefficient_edge)
+                self.append_gradFuncs(coefficient_edge)
+                coefficient_edge.set_next_functions(coefficient_node.get_gradFuncs())
+
+        # Creating and adding edges to the graph if the constants are in the graph
+        for constant in F_form.constants():
+            constant_node = _graph.get_node(constant)
+            if not constant_node == None:
+                R = fem.functionspace(
+                    constant.domain,
+                    real_element(
+                        constant.domain.basix_cell(), value_shape=constant.ufl_shape
+                    ),
+                )
+                function = fem.Function(R, dtype=constant.dtype)
+                adjoint_function = fem.Function(u.function_space, name="adjoint_rhs")
+                ctx = [
+                    F_form,
+                    u_node,
+                    constant,
+                    self.kwargs.get("bcs"),
+                    function,
+                    adjoint_function,
+                ]
+                constant_edge = Problem_Constant_Edge(constant_node, self, ctx=ctx)
+                _graph.add_edge(constant_edge)
+                self.append_gradFuncs(constant_edge)
+                constant_edge.set_next_functions(constant_node.get_gradFuncs())
+
+        # Creating and adding edges to the graph if the boundary conditions are in the graph
+        if self.kwargs.get("bcs") is not None:
+            for bc in self.kwargs.get("bcs"):
+                bc_node = _graph.get_node(bc)
+                if not bc_node == None:
+                    adjoint_function = fem.Function(
+                        u.function_space, name="adjoint_rhs"
+                    )
+                    ctx = [F_form, u_node, self.kwargs.get("bcs"), adjoint_function]
+                    bc_edge = Problem_Boundary_Edge(bc_node, self, ctx=ctx)
+                    _graph.add_edge(bc_edge)
+                    self.append_gradFuncs(bc_edge)
+                    bc_edge.set_next_functions(bc_node.get_gradFuncs())
+
+
+class LinearProblemNode(ProblemNode):
     """
     Node for the initialization of :py:class:`dolfinx.fem.petsc.LinearProblem`.
     """
@@ -436,7 +386,7 @@ class LinearProblemNode(graph.AbstractNode):
         return output
 
 
-class NonlinearProblemNode(graph.AbstractNode):
+class NonlinearProblemNode(ProblemNode):
     """
     Node for the initialization of :py:class:`dolfinx.fem.petsc.NonlinearProblem`.
     """

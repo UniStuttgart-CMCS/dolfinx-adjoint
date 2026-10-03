@@ -47,10 +47,10 @@ def assemble_scalar(*args, **kwargs):
     # The default edge is sufficient, since assembling a scalar does not require any additional operations
     # for the gradients
     assemble_edge = graph.Edge(form_node, assemble_node)
-    assemble_node.set_gradFuncs([assemble_edge])
+    assemble_node.grad_fns = [assemble_edge]
 
     # Create connectivity to previous edges
-    assemble_edge.set_next_functions(form_node.get_gradFuncs())
+    assemble_edge.set_next_functions(form_node.grad_fns)
     _graph.add_edge(assemble_edge)
 
     return output

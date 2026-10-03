@@ -45,8 +45,8 @@ def _build(edges: list, node_types: dict = None):
     built_edges = {}
     for name, predecessor, successor, factor in edges:
         edge = LinearEdge(nodes[predecessor], nodes[successor], factor=factor)
-        nodes[successor].append_gradFuncs(edge)
-        edge.set_next_functions(nodes[predecessor].get_gradFuncs())
+        nodes[successor].grad_fns.append(edge)
+        edge.set_next_functions(nodes[predecessor].grad_fns)
         _graph.add_edge(edge)
         built_edges[name] = edge
 

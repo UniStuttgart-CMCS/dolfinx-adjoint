@@ -19,7 +19,7 @@ class AbstractNode:
         version (int, optional): The version of the object, indicates if an object is an updated version of an
             already existing object. Defaults to 0.
         object (Any): The object that the node represents
-        gradFuncs (list): A list of the gradient functions that are connected to the node
+        grad_fns (list): A list of the gradient functions that are connected to the node
         _name (str): The name of the node
 
     """
@@ -38,7 +38,7 @@ class AbstractNode:
         self.id = id(object)
         self.version = version
         self.object = object
-        self.gradFuncs = []
+        self.grad_fns = []
         if "name" in kwargs:
             self._name = kwargs["name"]
         else:
@@ -65,38 +65,6 @@ class AbstractNode:
             object (Any): The object that the node represents
         """
         self.object = object
-
-    def set_gradFuncs(self, list: list):
-        """
-        Sets the gradient functions of the node.
-
-        Args:
-            list (list): A list of the gradient functions that are connected to the node
-        """
-        self.gradFuncs = list
-
-    def append_gradFuncs(self, Funcs: list | Any):
-        """
-        Appends a gradient function to the list of gradient functions.
-
-        Args:
-            _list (list or Any): A list of the gradient functions that are connected to the node.
-                If a single function is given, it is appended to the list.
-        """
-
-        if isinstance(Funcs, list):
-            self.gradFuncs.extend(Funcs)
-        else:
-            self.gradFuncs.append(Funcs)
-
-    def get_gradFuncs(self):
-        """
-        Returns the gradient functions of the node.
-
-        Returns:
-            list: A list of the gradient functions that are connected to the node
-        """
-        return self.gradFuncs
 
     def release(self):
         """

@@ -57,8 +57,8 @@ def form(*args, **kwargs):
             coefficient_edge = Form_Coefficient_Edge(
                 coefficient_node, form_node, ctx=ctx
             )
-            form_node.append_gradFuncs(coefficient_edge)
-            coefficient_edge.set_next_functions(coefficient_node.get_gradFuncs())
+            form_node.grad_fns.append(coefficient_edge)
+            coefficient_edge.set_next_functions(coefficient_node.grad_fns)
             _graph.add_edge(coefficient_edge)
 
     # Creating and adding edges to the graph if the constants are in the graph
@@ -74,8 +74,8 @@ def form(*args, **kwargs):
             function = fem.Function(R, dtype=constant.dtype)
             ctx = [ufl_form, constant, function]
             constant_edge = Form_Constant_Edge(constant_node, form_node, ctx=ctx)
-            form_node.append_gradFuncs(constant_edge)
-            constant_edge.set_next_functions(constant_node.get_gradFuncs())
+            form_node.grad_fns.append(constant_edge)
+            constant_edge.set_next_functions(constant_node.grad_fns)
             _graph.add_edge(constant_edge)
 
     return output

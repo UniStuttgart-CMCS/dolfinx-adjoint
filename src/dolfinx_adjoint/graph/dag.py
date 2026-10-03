@@ -184,11 +184,11 @@ class Graph:
         else:
             print("Gradient functions:")
             for node in self.nodes:
-                if node.get_gradFuncs() == []:
+                if node.grad_fns == []:
                     continue
                 print(f"\t{node}")
-                for gradFunc in node.get_gradFuncs():
-                    print(f"\t\t{gradFunc}")
+                for grad_fn in node.grad_fns:
+                    print(f"\t\t{grad_fn}")
             print("Next functions:")
             for edge in self.edges:
                 if edge.next_functions == []:
@@ -428,7 +428,7 @@ class Graph:
         # all the gradient functions of the function on the path, since the function can
         # be the result of more than one operation.
         seed_edge = Edge(function_node, None)
-        seed_edge.set_next_functions(function_node.get_gradFuncs())
+        seed_edge.set_next_functions(function_node.grad_fns)
         seed_edge(grad_outputs)
 
         if inputs is not None:

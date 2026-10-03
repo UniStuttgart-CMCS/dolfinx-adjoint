@@ -60,7 +60,7 @@ def test_release_frees_what_an_edge_saved_while_a_node_is_still_held():
         graph_.add_node(node)
     saved = _Value()
     edge = Edge(control, output, ctx=[saved])
-    output.append_gradFuncs(edge)
+    output.grad_fns.append(edge)
     graph_.add_edge(edge)
     saved = weakref.ref(saved)
     del edge

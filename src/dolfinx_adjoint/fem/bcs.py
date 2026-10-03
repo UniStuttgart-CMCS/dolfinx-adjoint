@@ -69,8 +69,8 @@ def dirichletbc(*args, **kwargs):
             value_node, dirichletbc_node, ctx=ctx
         )
 
-    dirichletbc_edge.set_next_functions(value_node.get_gradFuncs())
-    dirichletbc_node.set_gradFuncs([dirichletbc_edge])
+    dirichletbc_edge.set_next_functions(value_node.grad_fns)
+    dirichletbc_node.grad_fns = [dirichletbc_edge]
     _graph.add_edge(dirichletbc_edge)
 
     return output

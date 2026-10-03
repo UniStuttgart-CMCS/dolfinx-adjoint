@@ -119,9 +119,9 @@ class LinearProblem(LinearProblemBase):
             # Creating and adding the edge to the graph
             if not problem_node == None:
                 function_edge = graph.Edge(problem_node, solve_node)
-                solve_node.set_gradFuncs([function_edge])
+                solve_node.grad_fns = [function_edge]
                 _graph.add_edge(function_edge)
-                function_edge.set_next_functions(problem_node.get_gradFuncs())
+                function_edge.set_next_functions(problem_node.grad_fns)
 
         return super().solve(*args, **kwargs)
 
@@ -226,9 +226,9 @@ class NonlinearProblem(NonlinearProblemBase):
             # Creating and adding the edge to the graph
             if not problem_node == None:
                 function_edge = graph.Edge(problem_node, solve_node)
-                solve_node.set_gradFuncs([function_edge])
+                solve_node.grad_fns = [function_edge]
                 _graph.add_edge(function_edge)
-                function_edge.set_next_functions(problem_node.get_gradFuncs())
+                function_edge.set_next_functions(problem_node.grad_fns)
 
         return super().solve(*args, **kwargs)
 
@@ -266,8 +266,8 @@ class ProblemNode(graph.AbstractNode):
                     coefficient_node, self, ctx=ctx
                 )
                 _graph.add_edge(coefficient_edge)
-                self.append_gradFuncs(coefficient_edge)
-                coefficient_edge.set_next_functions(coefficient_node.get_gradFuncs())
+                self.grad_fns.append(coefficient_edge)
+                coefficient_edge.set_next_functions(coefficient_node.grad_fns)
 
         # Creating and adding edges to the graph if the constants are in the graph
         for constant in F_form.constants():
@@ -291,8 +291,8 @@ class ProblemNode(graph.AbstractNode):
                 ]
                 constant_edge = Problem_Constant_Edge(constant_node, self, ctx=ctx)
                 _graph.add_edge(constant_edge)
-                self.append_gradFuncs(constant_edge)
-                constant_edge.set_next_functions(constant_node.get_gradFuncs())
+                self.grad_fns.append(constant_edge)
+                constant_edge.set_next_functions(constant_node.grad_fns)
 
         # Creating and adding edges to the graph if the boundary conditions are in the graph
         if self.kwargs.get("bcs") is not None:
@@ -305,8 +305,8 @@ class ProblemNode(graph.AbstractNode):
                     ctx = [F_form, u_node, self.kwargs.get("bcs"), adjoint_function]
                     bc_edge = Problem_Boundary_Edge(bc_node, self, ctx=ctx)
                     _graph.add_edge(bc_edge)
-                    self.append_gradFuncs(bc_edge)
-                    bc_edge.set_next_functions(bc_node.get_gradFuncs())
+                    self.grad_fns.append(bc_edge)
+                    bc_edge.set_next_functions(bc_node.grad_fns)
 
 
 class LinearProblemNode(ProblemNode):

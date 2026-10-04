@@ -300,8 +300,8 @@ class Graph:
 
     def backprop(
         self,
-        outputs: object | Sequence[object],
-        inputs: object | Sequence[object] | None = None,
+        outputs: Any | Sequence[Any],
+        inputs: Any | Sequence[Any] | None = None,
         grad_outputs: Any | Sequence[Any] = 1.0,
     ) -> tuple[Any, ...] | None:
         """
@@ -351,6 +351,7 @@ class Graph:
 
         Example:
             Given two recorded scalar objectives and three recorded controls:
+
             >>> controls = (m1, m2, m3)
             >>> summed = graph_.backprop((J1, J2), controls)
             >>> weighted = graph_.backprop((J1, J2), controls, grad_outputs=(1.0, 0.5))

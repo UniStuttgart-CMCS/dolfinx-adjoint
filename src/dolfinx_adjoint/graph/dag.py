@@ -18,10 +18,6 @@ class Graph:
     The computational graph is a directed acyclic graph (DAG) that represents the
     operations, objects and dependencies in a forward simulation in DOLFINx.
 
-    Attributes:
-        nodes (ValuesView): Nodes in recording order, added through :py:meth:`add_node`.
-        edges (ValuesView): Edges in recording order, added through :py:meth:`add_edge`.
-
     Example:
         The graph object can be initialised and the default nodes and edges can be added as follows:
         >>> graph = Graph()

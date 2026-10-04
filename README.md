@@ -51,6 +51,16 @@ J = fem_ad.assemble_scalar(fem_ad.form(J_form, graph=graph_), graph=graph_)
 (dJdf,) = graph_.backprop(J, f)
 ```
 
+`backprop` accepts recorded objects or exact nodes, and always returns a tuple when
+controls are requested. For example, `graph_.backprop(J, [f, nu])` selects the latest
+versions of `f` and `nu`. Pass `graph_.get_node(f, version=0)` to select a particular
+recorded version.
+
+Multiple outputs produce one gradient of their weighted sum per requested control,
+following the vector–Jacobian product semantics of PyTorch's `autograd.grad`. 
+See [Multiple Objectives and Controls](docs/index.rst#multiple-objectives-and-controls)
+for details on multiple objectives and controls.
+
 ## Demos
 
 The `demos/` directory contains comprehensive Jupyter notebook examples demonstrating various PDE problems:

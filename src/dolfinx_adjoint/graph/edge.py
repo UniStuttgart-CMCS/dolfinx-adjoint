@@ -1,8 +1,6 @@
 import weakref
 from typing import Any
 
-import petsc4py.PETSc as PETSc
-
 from .node import Node
 
 
@@ -15,18 +13,13 @@ class Edge:
     the adjoint equations to calculate the derivative of the successor node with respect
     to the predecessor node.
 
-    Calling an edge will perform the backpropagation of the graph, by calculating the adjoint
-    value and passing it to the edges connected to the predecessor node.
-
     Attributes:
         predecessor (Node): The predecessor node of the edge
-        next_functions (list): The list of the gradient functions that are connected to the edge
         ctx (Any): The context variable of the edge
-        input_value (float or PETSc.Vec): The input value of the edge
 
     """
 
-    def __init__(self, predecessor: Node, successor: Node, ctx=None, input_value=None):
+    def __init__(self, predecessor: Node, successor: Node, ctx=None):
         """
         The constructor for the Edge class.
 
@@ -35,7 +28,6 @@ class Edge:
             successor (Node): The successor node of the edge. None marks an edge that is
                 not part of the graph, e.g. the edge that seeds the backpropagation.
             ctx (Any, optional): The context variable of the edge
-            input_value (float or PETSc.Vec, optional): The input value of the edge
 
         Raises:
             ValueError: If the predecessor node is None, i.e. the operation was recorded
@@ -43,15 +35,14 @@ class Edge:
                 depend on a tracked value and therefore has no edge to record.
 
         """
+
         if predecessor is None:
             raise ValueError(
                 f"The edge into {successor} has no predecessor node, since the operation was recorded with an input that is not part of the graph."
             )
         self.predecessor = predecessor
         self.successor = successor
-        self.next_functions = []
         self.ctx = ctx
-        self.input_value = input_value
 
     @property
     def successor(self):
@@ -69,70 +60,37 @@ class Edge:
 
         """
         self.ctx = None
-        self.input_value = None
 
-    def set_next_functions(self, funcList: list):
-        """
-        This method sets the next functions in the path of the edge.
+    @property
+    def next_functions(self) -> list:
+        """The edges into the predecessor node, which the propagation continues with."""
+        return self.predecessor.grad_fns
 
-        Typically the next functions are the edges that are connected to the predecessor node.
-
-        Args:
-            funcList (list): A list of the gradient functions that are connected to the edge
-
-        """
-        self.next_functions = funcList
-
-    def calculate_adjoint(self):
+    def calculate_adjoint(self, value: Any):
         """
         This method calculates the default adjoint equation for the edge, which
         corresponds to the derivative:
 
             d(successor)/d(predecessor) = 1.0
 
-        This operator is stored in the edge and applied to the input. The adjoint value of the predeccessor
+        This operator is stored in the edge and applied to the input. The adjoint value of the predecessor
         node is generally calculated as follows:
 
-            adjoint(predecessor) += adjoint(successor) * d(successor)/d(predecessor)
+            adjoint(predecessor) = adjoint(successor) * d(successor)/d(predecessor)
 
-        Returns:
-            float or PETSc.Vec: The adjoint value of the predecessor node
-        """
-        return self.input_value
-
-    def __call__(self, value: float | PETSc.Vec):
-        """
-        This method is used to perform the backpropagation of the edge.
-
-        By calling an edge, the adjoint value is calculated and passed to edges connected to the predecessor node.
-        These edges are automatically called with the adjoint value, performing the backpropagation through the graph.
+        The computed value only corresponds to the contribution of the current edge to the predecessor node. The total adjoint value of the predecessor node is the sum of all contributions from all edges into it.
 
         Args:
-            value (float or PETSc.Vec): The adjoint value of the successor node
+            value (Any): The adjoint value of the successor node.
 
-        Note:
-            This method is called automatically when the backpropagation of the whole graph is performed.
-            It should not be modified. The user should implement the calculate_adjoint method to define
-            the adjoint equation.
+        Returns:
+            Any: The adjoint contribution to the predecessor node, a scalar or PETSc.Vec
+            of which only the entries owned by the calling rank have to be valid. None if
+            it vanishes.
 
         """
 
-        # Compute adjoint value
-        self.input_value = value
-        grad_value = self.calculate_adjoint()
-
-        # Extract all marked next functions
-        next_functions = [
-            function
-            for function in self.next_functions
-            if getattr(function, "marked", True)
-        ]
-        for function in next_functions:
-            function(grad_value)
-
-        # Accumulate gradient if end of path
-        if not next_functions and isinstance(self.predecessor, Node):
-            self.predecessor.accumulate_grad(grad_value)
+        return value
 
     def __str__(self):
         """

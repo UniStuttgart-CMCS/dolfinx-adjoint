@@ -63,10 +63,8 @@ def test_gradient_of_a_function_value(
     dolfinx.fem.dirichletbc(v, dofs).set(condition_of_v.x.array)
 
     edge = graph_.get_edge(graph_.get_node(g), graph_.get_node(bc))
-    edge.input_value = u.x.petsc_vec
-
     assert np.isclose(
-        edge.calculate_adjoint().dot(v.x.petsc_vec),
+        edge.calculate_adjoint(u.x.petsc_vec).dot(v.x.petsc_vec),
         u.x.petsc_vec.dot(condition_of_v.x.petsc_vec),
     )
 
@@ -99,10 +97,8 @@ def test_gradient_of_a_condition_on_two_dofs(unit_square_mesh: mesh.Mesh):
     dolfinx.fem.dirichletbc(v, dofs).set(condition_of_v.x.array)
 
     edge = graph_.get_edge(graph_.get_node(g), graph_.get_node(bc))
-    edge.input_value = u.x.petsc_vec
-
     assert np.isclose(
-        edge.calculate_adjoint().dot(v.x.petsc_vec),
+        edge.calculate_adjoint(u.x.petsc_vec).dot(v.x.petsc_vec),
         u.x.petsc_vec.dot(condition_of_v.x.petsc_vec),
     )
 
@@ -139,10 +135,8 @@ def test_gradient_of_a_value_on_a_collapsed_space(
     dolfinx.fem.dirichletbc(v, dofs, V.sub(sub_space)).set(condition_of_v.x.array)
 
     edge = graph_.get_edge(graph_.get_node(g), graph_.get_node(bc))
-    edge.input_value = u.x.petsc_vec
-
     assert np.isclose(
-        edge.calculate_adjoint().dot(v.x.petsc_vec),
+        edge.calculate_adjoint(u.x.petsc_vec).dot(v.x.petsc_vec),
         u.x.petsc_vec.dot(condition_of_v.x.petsc_vec),
     )
 
@@ -184,9 +178,7 @@ def test_gradient_of_a_constant_value(
         expected[component] = u.x.petsc_vec.dot(condition_of_direction.x.petsc_vec)
 
     edge = graph_.get_edge(graph_.get_node(c), graph_.get_node(bc))
-    edge.input_value = u.x.petsc_vec
-
-    gradient = edge.calculate_adjoint()
+    gradient = edge.calculate_adjoint(u.x.petsc_vec)
 
     if value.ndim == 0:
         assert np.isscalar(gradient) and np.isclose(gradient, expected)

@@ -49,8 +49,6 @@ def assemble_scalar(*args, **kwargs):
     assemble_edge = graph.Edge(form_node, assemble_node)
     assemble_node.grad_fns = [assemble_edge]
 
-    # Create connectivity to previous edges
-    assemble_edge.set_next_functions(form_node.grad_fns)
     _graph.add_edge(assemble_edge)
 
     return output

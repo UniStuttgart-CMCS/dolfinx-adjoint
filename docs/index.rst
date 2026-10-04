@@ -60,8 +60,8 @@ How It Works
 
    .. grid-item-card:: 3. Backpropagate
 
-      Call ``graph.backprop(J, x)`` to compute the gradient of any
-      quantity *J* with respect to any parameter *x*.
+      Call ``graph.backprop(J, [x, ...])`` to compute the gradients of any
+      quantity *J* with respect to any parameters *x*, in a single pass.
 
 The computational graph is a directed acyclic graph (DAG) where:
 
@@ -145,6 +145,37 @@ For demos and tests, use ``pip install -e ".[all]"``.
 
    # Compute the gradient
    (dJdf,) = graph_.backprop(J, f)
+
+----
+
+.. _multiple-objectives-and-controls:
+
+Multiple Objectives and Controls
+--------------------------------
+
+``Graph.backprop`` returns one gradient per requested control, in control order.
+Multiple outputs are differentiated together as a weighted vector–Jacobian product,
+like ``torch.autograd.grad``. For scalar objectives :math:`J_j` and seeds
+:math:`s_j`, the returned gradient for control :math:`m_i` is
+
+.. math::
+
+   g_i = \sum_j s_j \frac{\partial J_j}{\partial m_i}.
+
+A single seed applies to every output; the default ``1.0`` differentiates the sum of
+scalar objectives. Alternatively, supply a seed sequence of the same length and order
+as the outputs.
+
+For two recorded scalar objectives and three recorded controls:
+
+.. code-block:: python
+
+   controls = (m1, m2, m3)
+   summed = graph_.backprop((J1, J2), controls)  # three gradients of J1 + J2
+   weighted = graph_.backprop((J1, J2), controls, grad_outputs=(1.0, 0.5))
+
+To obtain each objective's gradients separately, request all controls in one call per
+objective, using the same graph.
 
 ----
 

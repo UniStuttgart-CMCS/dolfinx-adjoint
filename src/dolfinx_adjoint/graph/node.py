@@ -19,7 +19,7 @@ class AbstractNode:
         version (int, optional): The version of the object, indicates if an object is an updated version of an
             already existing object. Defaults to 0.
         object (Any): The object that the node represents
-        grad_fns (list): A list of the gradient functions that are connected to the node
+        grad_fns (list): A list of the edges into the node, whose adjoint values it receives
         _name (str): The name of the node
 
     """
@@ -118,9 +118,6 @@ class Node(AbstractNode):
         """The object the node represents, or None once the node is released."""
 
         return self.object
-
-    def get_grad(self):
-        return self.grad
 
     def reset_grad(self):
         self.grad = None

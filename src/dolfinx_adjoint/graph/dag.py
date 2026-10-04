@@ -1,6 +1,7 @@
 import gc
 import os
-from typing import ValuesView
+from collections.abc import Sequence, ValuesView
+from typing import Any, Callable
 
 import networkx as nx
 from dolfinx.mesh import Mesh
@@ -8,6 +9,7 @@ from networkx import DiGraph
 
 from .edge import Edge
 from .node import AbstractNode, Node
+from .values import add
 
 
 class Graph:
@@ -219,8 +221,9 @@ class Graph:
         color = "lightblue" if isinstance(node, Node) else "pink"
         nx_graph.add_node(node, name=node.name, node=node, color=color)
 
-    def to_networkx(self) -> DiGraph:
-        """Convert the graph to a networkx graph
+    @property
+    def nx_graph(self) -> DiGraph:
+        """The cached NetworkX representation of the graph.
 
         Nodes themselves are the keys. The representation is cached and cleared when
         the graph is deleted, so it is empty if kept past the graph.
@@ -237,17 +240,6 @@ class Graph:
                 self._add_edge_to_networkx(nx_graph, edge)
             self._nx_graph = nx_graph
         return self._nx_graph
-
-    def _get_networkx_graph(self) -> DiGraph:
-        """Get the networkx graph representation of the graph.
-
-        Returns:
-            DiGraph: The networkx graph representation of the graph.
-        """
-        if self._nx_graph is None:
-            return self.to_networkx()
-        else:
-            return self._nx_graph
 
     def visualise(
         self,
@@ -272,15 +264,14 @@ class Graph:
 
         if ax is None:
             _, ax = plt.subplots(figsize=(10, 8))
-        nx_graph = self.to_networkx()
-        labels = nx.get_node_attributes(nx_graph, "name")
-        edge_labels = nx.get_edge_attributes(nx_graph, "tag")
+        labels = nx.get_node_attributes(self.nx_graph, "name")
+        edge_labels = nx.get_edge_attributes(self.nx_graph, "tag")
         path = set() if path is None else path
         edge_colors = {
             key: "black" if edge in path else "grey"
-            for key, edge in nx.get_edge_attributes(nx_graph, "edge").items()
+            for key, edge in nx.get_edge_attributes(self.nx_graph, "edge").items()
         }
-        node_colors = nx.get_node_attributes(nx_graph, "color")
+        node_colors = nx.get_node_attributes(self.nx_graph, "color")
         layouts = {
             "planar": nx.planar_layout,
             "shell": nx.shell_layout,
@@ -289,11 +280,11 @@ class Graph:
         }
         # One layout places both the graph and its edge labels.
         if not callable(style):
-            edge_pos = layouts.get(style, nx.spring_layout)(nx_graph)
+            edge_pos = layouts.get(style, nx.spring_layout)(self.nx_graph)
         else:
-            edge_pos = style(nx_graph)
+            edge_pos = style(self.nx_graph)
         nx.draw(
-            nx_graph,
+            self.nx_graph,
             pos=edge_pos,
             ax=ax,
             labels=labels,
@@ -303,176 +294,267 @@ class Graph:
         )
         if print_edge_labels:
             nx.draw_networkx_edge_labels(
-                nx_graph, pos=edge_pos, edge_labels=edge_labels, ax=ax
+                self.nx_graph, pos=edge_pos, edge_labels=edge_labels, ax=ax
             )
         return ax
 
-    def backprop(self, outputs, inputs=None, grad_outputs=1.0):
+    def backprop(
+        self,
+        outputs: object | Sequence[object],
+        inputs: object | Sequence[object] | None = None,
+        grad_outputs: Any | Sequence[Any] = 1.0,
+    ) -> tuple[Any, ...] | None:
         """
         Perform backpropagation in the graph
 
         The gradients of all previous calls are reset before the propagation is started.
 
-        If a variable is given, it acts as the control: only the edges on the path from the
-        control to the function are marked and executed. The propagation therefore stops at
-        the control, whose gradient is stored and returned, even if the control is an
-        intermediate node of the graph. No gradients are stored in the nodes between the
-        function and the control.
+        Multiple outputs produce one gradient of their weighted sum per control.
+        For scalar objectives J_j and seeds s_j, the gradient for control m_i is
+        sum_j s_j * dJ_j/dm_i. To obtain separate gradients for each objective,
+        call backprop once per objective with all requested controls.
 
-        If no variable is given, all edges the function depends on are marked and the
+        If controls are given, only the edges on the paths from the controls to the
+        outputs are executed, in a single propagation. The propagation therefore ends at
+        the controls, whose gradients are stored and returned, even if a control is an
+        intermediate node of the graph. A control that depends on another control stores
+        its gradient and also passes it on, so that each control receives its total
+        derivative.
+
+        If no control is given, all edges the outputs depend on are executed and the
         propagation continues until it reaches the leaves of this dependency subgraph.
         Gradients are then stored only in these leaves; intermediate nodes are passed
-        through without storing their gradients. The gradients can be retrieved afterwards
-        with :py:meth:`Node.get_grad` on the respective nodes.
+        through without storing their gradients. The gradients can be read afterwards
+        from :py:attr:`Node.grad` of the respective nodes.
 
         Args:
-            outputs: The recorded object to differentiate, or its exact Node.
+            outputs: The recorded object to differentiate, or its exact Node, or a
+                sequence of them.
                 An object selects its latest version; a Node selects that version.
-            inputs: The control object or its exact Node with respect to which
-                the differentiation is performed. Defaults to None. If None, the propagation is
-                carried out down to the dependency leaves of the function.
-            grad_outputs (float or PETSc.Vec, optional): The adjoint value the propagation is
-                started with. Defaults to 1.0, the derivative of a scalar function
-                with respect to itself.
+            inputs: A control object or Node, or a sequence of control objects
+                and Nodes in the desired return order.
+                Defaults to None. If None, the propagation is carried out down to the dependency
+                leaves of the outputs.
+            grad_outputs (float or PETSc.Vec, or a sequence of them, optional): The seed,
+                i.e. the adjoint value the propagation is started with, or one per output.
 
         Returns:
-            tuple of float or PETSc.Vec: A one-element tuple containing the gradient
-            with respect to the variable, following :py:func:`torch.autograd.grad`.
-            Without a variable, gradients are only stored in the nodes and None is returned.
-            A PETSc.Vec gradient has the layout of the vector of the variable, including its
-            ghost entries, but only its entries owned by the calling rank are valid.
+            tuple or None: One gradient of the weighted output sum per requested
+            control, in control order. An entry is None for a control no output
+            depends on. Without controls, returns None and stores leaf gradients.
+            A PETSc.Vec gradient has the control's vector layout, including ghost
+            entries, but only its entries owned by the calling rank are valid.
 
         Raises:
-            ValueError: If the function or the variable is not part of the graph, or if
-                the function does not depend on the variable
-            TypeError: If the variable does not represent a numerical value and can
-                therefore not store a gradient
-            RuntimeError: If the graph contains a cycle and is therefore no longer a DAG
+            TypeError: If a control does not represent a numerical value and can
+                therefore not store a gradient.
 
-        Note:
-            The gradients are reset and the marks are refreshed on every call. The result is
-            stored in the given variable, or, without a variable, in the dependency leaves.
-            Every edge that can be executed has to be registered with :py:meth:`add_edge`,
-            since an edge that has never been marked is executed, and the graph must not be
-            modified during the propagation.
+        Example:
+            Given two recorded scalar objectives and three recorded controls:
+            >>> controls = (m1, m2, m3)
+            >>> summed = graph_.backprop((J1, J2), controls)
+            >>> weighted = graph_.backprop((J1, J2), controls, grad_outputs=(1.0, 0.5))
 
-        Note:
-            When the propagation includes collective operations, e.g. the adjoint equation of
-            a problem that is solved on the communicator of the mesh, the executed edges
-            depend on the marked path. All participating ranks therefore have to build the
-            same graph and to select the corresponding function and variable, so that the
-            operations are performed in a compatible order.
-
+            summed and weighted each contain three gradients.
         """
 
-        function_node = self.get_node(outputs)
-        if function_node is None:
-            raise ValueError(
-                f"The function with id {id(outputs)} is not part of the graph."
-            )
-
-        if not nx.is_directed_acyclic_graph(self._get_networkx_graph()):
-            raise RuntimeError(
-                "The graph contains a cycle and is therefore no longer a DAG."
-            )
-
-        if inputs is not None:
-            variable_node = self.get_node(inputs)
-            if variable_node is None:
-                raise ValueError(
-                    f"The variable with id {id(inputs)} is not part of the graph."
-                )
-            if not isinstance(variable_node, Node):
+        if not isinstance(outputs, Sequence):
+            outputs = (outputs,)
+        output_nodes = [self.get_node(value) for value in outputs]
+        if not isinstance(grad_outputs, Sequence):
+            grad_outputs = (grad_outputs,) * len(output_nodes)
+        order = self._topological_order(output_nodes)
+        if inputs is not None and not isinstance(inputs, Sequence):
+            inputs = (inputs,)
+        control_nodes = (
+            [] if inputs is None else [self.get_node(value) for value in inputs]
+        )
+        for node in control_nodes:
+            if not isinstance(node, Node):
                 raise TypeError(
-                    f"The variable {variable_node} with id {id(inputs)} does not represent a numerical value and can therefore not store a gradient."
-                )
-            nx_graph = self._get_networkx_graph()
-            if variable_node not in nx.ancestors(nx_graph, function_node) | {
-                function_node
-            }:
-                raise ValueError(
-                    f"The function with id {id(outputs)} does not depend on the variable with id {id(inputs)}."
+                    f"{node} does not represent a numerical value and can therefore not store a gradient."
                 )
 
         self.reset_grads()
-        if inputs is not None:
-            self.get_path(variable_node, function_node)
+
+        # Select the edges to be executed, either along a path or all the dependencies if no control is specificied.
+        if control_nodes:
+            marked = self.get_path(control_nodes, output_nodes)
+            targets = control_nodes
         else:
-            self.get_dependencies(function_node)
+            marked = self.get_dependencies(output_nodes)
+            targets = [
+                node
+                for node in order
+                if not any(edge in marked for edge in node.grad_fns)
+            ]
 
-        # The seed enters the propagation through an edge that ends in the function and
-        # is deliberately not part of the graph, so that it is always executed. It seeds
-        # all the gradient functions of the function on the path, since the function can
-        # be the result of more than one operation.
-        seed_edge = Edge(function_node, None)
-        seed_edge.set_next_functions(function_node.grad_fns)
-        seed_edge(grad_outputs)
+        # Propagate the adjoint values in reverse topological order, from the outputs to the controls or leaves.
+        # The rule to propagate values through an edge is to call the edge's calculate_adjoint method with the adjoint value of the successor node.
+        captured = self._propagate_reverse(
+            order,
+            marked,
+            output_nodes,
+            grad_outputs,
+            targets,
+            lambda edge, value: edge.calculate_adjoint(value),
+        )
+        for node, adjoint in captured.items():
+            if isinstance(node, Node):
+                node.accumulate_grad(adjoint)
 
-        if inputs is not None:
-            return (variable_node.get_grad(),)
+        if control_nodes:
+            return tuple(node.grad for node in control_nodes)
 
-    def get_path(self, start: AbstractNode, end: AbstractNode):
+    def get_path(
+        self,
+        start_nodes: Sequence[AbstractNode],
+        end_nodes: Sequence[AbstractNode],
+    ) -> set[Edge]:
         """
-        Get the path from the start node to the end node by marking the edges
+        Get the edges on the paths from the start nodes to the end nodes
 
         Args:
-            start (AbstractNode): The start node
-            end (AbstractNode): The end node
+            start_nodes (Sequence[AbstractNode]): The start nodes, whose
+                paths are collected together.
+            end_nodes (Sequence[AbstractNode]): The end nodes, whose
+                paths are collected together.
 
-        Raises:
-            ValueError: If the start or the end node is not part of the graph
+        Returns:
+            set[Edge]: The edges along the paths.
 
         """
 
-        nx_graph = self._get_networkx_graph()
-        if start not in nx_graph:
-            raise ValueError(f"The start node {start} is not part of the graph.")
-        if end not in nx_graph:
-            raise ValueError(f"The end node {end} is not part of the graph.")
+        descendants_of_start = set(start_nodes).union(
+            *(nx.descendants(self.nx_graph, node) for node in start_nodes)
+        )
+        ancestors_of_end = set(end_nodes).union(
+            *(nx.ancestors(self.nx_graph, node) for node in end_nodes)
+        )
 
-        descendants_of_start = nx.descendants(nx_graph, start) | {start}
-        ancestors_of_end = nx.ancestors(nx_graph, end) | {end}
+        return {
+            edge
+            for edge in self.edges
+            if edge.predecessor in descendants_of_start
+            and edge.successor in ancestors_of_end
+        }
 
-        for edge in self.edges:
-            edge.marked = (
-                edge.predecessor in descendants_of_start
-                and edge.successor in ancestors_of_end
+    def get_dependencies(self, end_nodes: Sequence[AbstractNode]) -> set[Edge]:
+        """
+        Get the edges of all operations the end nodes are the result of
+
+        Args:
+            end_nodes (Sequence[AbstractNode]): The end nodes, whose
+                dependencies are collected together.
+
+        Returns:
+            set[Edge]: The edges into the end nodes and into the nodes they depend on,
+            see :py:meth:`get_path`.
+
+
+        """
+
+        upstream_of_end = set(end_nodes).union(
+            *(nx.ancestors(self.nx_graph, node) for node in end_nodes)
+        )
+
+        return {edge for edge in self.edges if edge.successor in upstream_of_end}
+
+    def _topological_order(
+        self, output_nodes: Sequence[AbstractNode]
+    ) -> list[AbstractNode]:
+        """The nodes the outputs depend on, in topological order."""
+
+        upstream = set().union(
+            *(nx.ancestors(self.nx_graph, node) | {node} for node in output_nodes)
+        )
+        position = {node: index for index, node in enumerate(self.nodes)}
+        return [
+            node
+            for node in nx.lexicographical_topological_sort(
+                self.nx_graph, key=position.__getitem__
             )
+            if node in upstream
+        ]
 
-    def get_dependencies(self, end: AbstractNode):
-        """
-        Get all operations the end node is the result of by marking the edges
+    def _propagate_reverse(
+        self,
+        order: list[AbstractNode],
+        marked: set[Edge],
+        output_nodes: Sequence[AbstractNode],
+        seeds: Sequence[Any],
+        control_nodes: Sequence[AbstractNode],
+        rule: Callable[[Edge, Any], Any],
+    ) -> dict[AbstractNode, Any]:
+        """Reverse: propagate values in reverse topological order through the graph
 
-        All other edges are unmarked in the same pass and a query that raises leaves the previous marking unchanged.
+        Instead of sending values directly downstream through the edges, we collect
+        the values at each node and send them downstream once per node. This allows
+        for a deterministic order of the edge contributions and increases efficiency,
+        since every edge is only called once per rank even if it has multiple successors.
+
+        This is technically achieved by holding intermediate values inside a pending buffer,
+        which is then flushed to the next nodes once the current node is processed.
+        All endpoints of propagation are collected in a captured buffer, which is returned to the caller.
+
+        The actual propagation is done using the provided rule, which is a edge specific callable
+        specified by the current edge and the value to be propagated. The rule is responsible for
+        calculating the contribution of the current edge to the next node.
 
         Args:
-            end (AbstractNode): The end node
+            order (list[AbstractNode]): The topological order of the nodes to propagate through.
+            marked (set[Edge]): The relevant edges to propagate through, e.g. those on the paths
+                from the controls to the outputs.
+            output_nodes (Sequence[AbstractNode]): The output nodes to start the propagation from.
+            seeds (Sequence[Any]): The initial values to seed the propagation.
+            control_nodes (Sequence[AbstractNode]): The nodes at which the propagation
+                ends and whose values are returned.
+            rule: The contribution ``rule(edge, value)`` describing how the value is propagated
+                through the edge.
 
-        Raises:
-            ValueError: If the end node is not part of the graph
-
+        Returns:
+            dict: The values of the reached control nodes, keyed by node.
         """
 
-        nx_graph = self._get_networkx_graph()
-        if end not in nx_graph:
-            raise ValueError(f"The end node {end} is not part of the graph.")
+        controls = set(control_nodes)
 
-        upstream_of_end = nx.ancestors(nx_graph, end) | {end}
+        # Buffers for final values and intermediate values
+        captured: dict[AbstractNode, Any] = {}
+        pending: dict[AbstractNode, Any] = {}
 
-        for edge in self.edges:
-            edge.marked = edge.successor in upstream_of_end
+        # Asign the intial values that should be propagated to the output nodes
+        for node, value in zip(output_nodes, seeds):
+            pending[node] = add(pending.get(node), value)
+
+        # Propagate the values in reverse topological order, from the outputs to the controls.
+        for node in reversed(order):
+
+            # Get the accumulated value of the node, if it has been reached by the propagation. If not, skip it.
+            value = pending.pop(node, None)
+            if value is None:
+                continue
+
+            # Capture the value of the node if it is a control (intermediate or final)
+            if node in controls:
+                captured[node] = value
+
+            # Propagate the value through the relevant edges
+            edges = [edge for edge in node.grad_fns if edge in marked]
+            for edge in edges:
+                predecessor = edge.predecessor
+                pending[predecessor] = add(pending.get(predecessor), rule(edge, value))
+        return captured
 
     def reset_grads(self):
         """
         Reset the gradients in the graph
 
         """
+
         for node in self.nodes:
-            # Since abstract nodes do not have gradients, we skip them
-            try:
+            # Abstract nodes do not represent a numerical value and have no gradient.
+            if isinstance(node, Node):
                 node.reset_grad()
-            except:
-                pass
 
     def release(self):
         """

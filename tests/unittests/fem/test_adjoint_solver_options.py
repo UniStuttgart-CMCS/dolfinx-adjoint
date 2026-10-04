@@ -55,13 +55,9 @@ def adjoint_edge(request, option) -> Edge:
     problem.solve(graph=graph_)
 
     predecessor = {"coefficient": f, "constant": c, "boundary": bcs[0]}[request.param]
-    edge = graph_.get_edge(
-        graph_.get_node(predecessor), graph_.get_node(problem)
-    )
+    edge = graph_.get_edge(graph_.get_node(predecessor), graph_.get_node(problem))
 
-    edge.input_value = create_vector(V)
-
-    yield edge
+    yield edge, create_vector(V)
 
 
 @pytest.fixture
@@ -93,7 +89,8 @@ def test_adjoint_solver_is_configured_by_the_given_options(adjoint_problem_data)
 def test_adjoint_solver_receives_the_options_given_to_the_problem(adjoint_edge):
     """Each edge lets PETSc reject invalid adjoint KSP and PC options."""
     with pytest.raises(PETSc.Error, match="invalid_adjoint_solver_for_test"):
-        adjoint_edge.calculate_adjoint()
+        edge, value = adjoint_edge
+        edge.calculate_adjoint(value)
 
 
 def test_adjoint_solver_removes_its_options_from_the_database(adjoint_problem_data):

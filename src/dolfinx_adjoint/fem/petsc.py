@@ -121,7 +121,6 @@ class LinearProblem(LinearProblemBase):
                 function_edge = graph.Edge(problem_node, solve_node)
                 solve_node.grad_fns = [function_edge]
                 _graph.add_edge(function_edge)
-                function_edge.set_next_functions(problem_node.grad_fns)
 
         return super().solve(*args, **kwargs)
 
@@ -228,7 +227,6 @@ class NonlinearProblem(NonlinearProblemBase):
                 function_edge = graph.Edge(problem_node, solve_node)
                 solve_node.grad_fns = [function_edge]
                 _graph.add_edge(function_edge)
-                function_edge.set_next_functions(problem_node.grad_fns)
 
         return super().solve(*args, **kwargs)
 
@@ -267,7 +265,6 @@ class ProblemNode(graph.AbstractNode):
                 )
                 _graph.add_edge(coefficient_edge)
                 self.grad_fns.append(coefficient_edge)
-                coefficient_edge.set_next_functions(coefficient_node.grad_fns)
 
         # Creating and adding edges to the graph if the constants are in the graph
         for constant in F_form.constants():
@@ -292,7 +289,6 @@ class ProblemNode(graph.AbstractNode):
                 constant_edge = Problem_Constant_Edge(constant_node, self, ctx=ctx)
                 _graph.add_edge(constant_edge)
                 self.grad_fns.append(constant_edge)
-                constant_edge.set_next_functions(constant_node.grad_fns)
 
         # Creating and adding edges to the graph if the boundary conditions are in the graph
         if self.kwargs.get("bcs") is not None:
@@ -306,7 +302,6 @@ class ProblemNode(graph.AbstractNode):
                     bc_edge = Problem_Boundary_Edge(bc_node, self, ctx=ctx)
                     _graph.add_edge(bc_edge)
                     self.grad_fns.append(bc_edge)
-                    bc_edge.set_next_functions(bc_node.grad_fns)
 
 
 class LinearProblemNode(ProblemNode):
@@ -509,7 +504,7 @@ class Problem_Coefficient_Edge(graph.Edge):
 
     """
 
-    def calculate_adjoint(self):
+    def calculate_adjoint(self, value: PETSc.Vec):
         """
         The method provides the adjoint equation for the derivative of the solution to a linear or nonlinear problem with respect to the coefficient.
 
@@ -546,7 +541,7 @@ class Problem_Coefficient_Edge(graph.Edge):
         # Solve (J⁻¹)ᵀ λ = -x where x is the input with a sparse linear solver
         adjoint_solution = AdjointProblem(
             J_adjoint,
-            -self.input_value,
+            -value,
             adjoint_function,
             bcs=bcs,
             petsc_options=self.successor.adjoint_petsc_options,
@@ -576,7 +571,7 @@ class Problem_Constant_Edge(graph.Edge):
 
     """
 
-    def calculate_adjoint(self):
+    def calculate_adjoint(self, value: PETSc.Vec):
         """
         The method provides the adjoint equation for the derivative of the solution to a linear or nonlinear problem with respect to the constant.
 
@@ -608,7 +603,7 @@ class Problem_Constant_Edge(graph.Edge):
         # Solve (J⁻¹)ᵀ λ = -x where x is the input with a sparse linear solver
         adjoint_solution = AdjointProblem(
             J_adjoint,
-            -self.input_value,
+            -value,
             adjoint_function,
             bcs=bcs,
             petsc_options=self.successor.adjoint_petsc_options,
@@ -641,7 +636,7 @@ class Problem_Boundary_Edge(graph.Edge):
 
     """
 
-    def calculate_adjoint(self):
+    def calculate_adjoint(self, value: PETSc.Vec):
         """
         The method provides the adjoint equation for the derivative of the solution to a linear or nonlinear problem with respect to the boundary condition.
 
@@ -677,7 +672,7 @@ class Problem_Boundary_Edge(graph.Edge):
 
         # The direct contribution x_Γ has to be secured before the adjoint solve, which
         # homogenises the right-hand side it is derived from.
-        direct_contribution = self.input_value.copy()
+        direct_contribution = value.copy()
 
         # Construct the transpose of the Jacobian J = ∂F/∂u
         V = u.function_space
@@ -687,7 +682,7 @@ class Problem_Boundary_Edge(graph.Edge):
         # Solve (J⁻¹)ᵀ λ = -x where x is the input with a sparse linear solver
         adjoint_solution = AdjointProblem(
             J_adjoint,
-            -self.input_value,
+            -value,
             adjoint_function,
             bcs=bcs,
             petsc_options=self.successor.adjoint_petsc_options,

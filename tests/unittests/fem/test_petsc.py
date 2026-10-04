@@ -83,8 +83,7 @@ def test_nonlinear_problem_constant_edge_gradient(
     seed = assemble_vector(fem_ad.form((1 + x[0]) * ufl.conj(v) * ufl.dx))
     try:
         seed.ghostUpdate(addv=PETSc.InsertMode.ADD, mode=PETSc.ScatterMode.REVERSE)
-        edge.input_value = seed
-        gradient = edge.calculate_adjoint()
+        gradient = edge.calculate_adjoint(seed)
     finally:
         seed.destroy()
 
@@ -144,8 +143,7 @@ def test_problem_constant_gradient_on_measures(
         adjoint_input.ghostUpdate(
             addv=PETSc.InsertMode.ADD, mode=PETSc.ScatterMode.REVERSE
         )
-        edge.input_value = adjoint_input
-        gradient = edge.calculate_adjoint()
+        gradient = edge.calculate_adjoint(adjoint_input)
     finally:
         adjoint_input.destroy()
 

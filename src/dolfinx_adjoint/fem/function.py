@@ -73,7 +73,6 @@ class Function(fem.Function):
         copy_edge = graph.Edge(copied_node, function_node)
         function_node.grad_fns = [copy_edge]
         _graph.add_edge(copy_edge)
-        copy_edge.set_next_functions(copied_node.grad_fns)
 
         return result
 
@@ -115,7 +114,6 @@ class Function(fem.Function):
         assign_edge = graph.Edge(function_node, assign_node)
         assign_node.grad_fns = [assign_edge]
         _graph.add_edge(assign_edge)
-        assign_edge.set_next_functions(function_node.grad_fns)
 
 
 class Constant(fem.Constant):

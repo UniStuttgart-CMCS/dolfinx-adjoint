@@ -37,20 +37,6 @@ def test_assigning_a_function_from_itself_records_no_self_loop(
     ) == (expected, list(zip(nodes, nodes[1:])))
 
 
-def test_backprop_rejects_a_graph_with_a_cycle():
-    """Backpropagation refuses a graph in which an edge leads back to its predecessor."""
-    graph_ = Graph()
-    first = Node(object(), name="first")
-    second = Node(object(), name="second")
-    for node in (first, second):
-        graph_.add_node(node)
-    graph_.add_edge(Edge(first, second))
-    graph_.add_edge(Edge(second, first))
-
-    with pytest.raises(RuntimeError, match="cycle"):
-        graph_.backprop(second.object)
-
-
 def test_release_frees_what_an_edge_saved_while_a_node_is_still_held():
     """Releasing frees the context of an edge, although the caller still holds its node."""
     graph_ = Graph()

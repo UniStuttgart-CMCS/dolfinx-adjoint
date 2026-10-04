@@ -58,7 +58,6 @@ def form(*args, **kwargs):
                 coefficient_node, form_node, ctx=ctx
             )
             form_node.grad_fns.append(coefficient_edge)
-            coefficient_edge.set_next_functions(coefficient_node.grad_fns)
             _graph.add_edge(coefficient_edge)
 
     # Creating and adding edges to the graph if the constants are in the graph
@@ -75,7 +74,6 @@ def form(*args, **kwargs):
             ctx = [ufl_form, constant, function]
             constant_edge = Form_Constant_Edge(constant_node, form_node, ctx=ctx)
             form_node.grad_fns.append(constant_edge)
-            constant_edge.set_next_functions(constant_node.grad_fns)
             _graph.add_edge(constant_edge)
 
     return output
@@ -141,7 +139,7 @@ class Form_Coefficient_Edge(graph.Edge):
 
     """
 
-    def calculate_adjoint(self):
+    def calculate_adjoint(self, value):
         """
         The method provides the adjoint equation for the derivative of the form with respect to a coefficient.
 
@@ -160,9 +158,9 @@ class Form_Coefficient_Edge(graph.Edge):
             fem.form(derivative, **self.successor.kwargs)
         )
 
+        with output.localForm() as local:
+            local.scale(value)
         output.ghostUpdate(addv=PETSc.InsertMode.ADD, mode=PETSc.ScatterMode.REVERSE)
-
-        output.scale(self.input_value)
 
         return output
 
@@ -172,7 +170,7 @@ class Form_Constant_Edge(graph.Edge):
     Edge providing the adjoint equation for the derivative of the form with respect to a constant.
     """
 
-    def calculate_adjoint(self):
+    def calculate_adjoint(self, value):
         """
         The method provides the adjoint equation for the derivative of the form with respect to a scalar constant.
 
@@ -193,8 +191,9 @@ class Form_Constant_Edge(graph.Edge):
         output = fem.petsc.assemble_vector(
             fem.form(derivative, **self.successor.kwargs)
         )
+        with output.localForm() as local:
+            local.scale(value)
         output.ghostUpdate(addv=PETSc.InsertMode.ADD, mode=PETSc.ScatterMode.REVERSE)
-        output.scale(self.input_value)
 
         # Shape distinguishes a scalar from a vector holding a single component.
         if not constant.ufl_shape:

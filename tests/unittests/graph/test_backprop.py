@@ -1,33 +1,31 @@
 """Unit tests for the backpropagation through the computational graph."""
 
+import numpy as np
 import pytest
+from petsc4py import PETSc
 
 import dolfinx_adjoint.graph as graph
-from dolfinx_adjoint.graph import AbstractNode, Edge, Node
+from dolfinx_adjoint.graph import Edge, Node
 
 
-class LinearEdge(Edge):
-    """Test double with a constant derivative and a flag indicating execution."""
+class ScaledEdge(Edge):
+    """Test double with a constant derivative."""
 
     def __init__(self, predecessor: Node, successor: Node, factor: float = 1.0):
         super().__init__(predecessor, successor)
         self.factor = factor
-        self.called = False
 
-    def calculate_adjoint(self):
-        self.called = True
-        return self.input_value * self.factor
+    def calculate_adjoint(self, value):
+        return value * self.factor
 
 
-def _build(edges: list, node_types: dict = None):
+def _build(edges: list):
     """Build a graph from ``(name, predecessor, successor, factor)`` tuples.
 
-    The edges are given in the order in which the forward operations are performed and
-    ``node_types`` overrides the node class of a node. Returns the graph and the objects,
-    nodes and edges, the last three as dictionaries of names.
+    The edges are given in the order in which the forward operations are performed.
+    Returns the graph and the objects, nodes and edges, the last three as dictionaries
+    of names.
     """
-    node_types = node_types or {}
-
     names = []
     for _, predecessor, successor, _ in edges:
         for name in (predecessor, successor):
@@ -39,23 +37,17 @@ def _build(edges: list, node_types: dict = None):
     nodes = {}
     for name in names:
         objects[name] = object()
-        nodes[name] = node_types.get(name, Node)(objects[name], name=name)
+        nodes[name] = Node(objects[name], name=name)
         _graph.add_node(nodes[name])
 
     built_edges = {}
     for name, predecessor, successor, factor in edges:
-        edge = LinearEdge(nodes[predecessor], nodes[successor], factor=factor)
+        edge = ScaledEdge(nodes[predecessor], nodes[successor], factor=factor)
         nodes[successor].grad_fns.append(edge)
-        edge.set_next_functions(nodes[predecessor].grad_fns)
         _graph.add_edge(edge)
         built_edges[name] = edge
 
     return _graph, objects, nodes, built_edges
-
-
-def _executed_edges(edges: dict):
-    """Get the names of the edges that have been evaluated."""
-    return {name for name, edge in edges.items() if edge.called}
 
 
 @pytest.fixture
@@ -98,230 +90,238 @@ def seed(request):
 # Gradient values and storage
 
 
-def test_backprop_repeats_the_chain_derivative_without_accumulating(chain_graph):
-    """Each call returns the product of the derivatives, without stale gradients."""
+def test_backprop_repeats_the_chain_derivative_without_accumulating(chain_graph, seed):
+    """Each call scales the chain derivative by its seed, without stale gradients."""
     _graph, objects, _, _ = chain_graph
 
     gradients = [
-        _graph.backprop(objects["objective"], objects["variable"])[0]
+        _graph.backprop(objects["objective"], objects["variable"], grad_outputs=seed)[0]
         for _ in range(2)
     ]
 
-    assert gradients == pytest.approx([6.0, 6.0])
+    assert gradients == pytest.approx([6.0 * seed, 6.0 * seed])
 
 
-def test_backprop_sums_parallel_paths():
-    """Gradients of parallel paths are accumulated in the variable."""
-    _graph, objects, _, _ = _build(
-        [
-            ("e_upper_in", "variable", "upper", 2.0),
-            ("e_upper_out", "upper", "form", 3.0),
-            ("e_lower_in", "variable", "lower", 5.0),
-            ("e_lower_out", "lower", "form", 7.0),
-            ("e_form", "form", "objective", 1.0),
-        ]
-    )
-
-    (gradient,) = _graph.backprop(objects["objective"], objects["variable"])
-
-    assert gradient == pytest.approx(2.0 * 3.0 + 5.0 * 7.0)
+# Selection of controls
 
 
-def test_backprop_stores_the_gradient_in_an_intermediate_control(chain_graph):
-    """A selected intermediate node receives the gradient; its input does not."""
-    _graph, objects, nodes, _ = chain_graph
+def test_backprop_updates_gradients_when_switching_controls_and_modes(two_input_graph):
+    """Catch stale gradients or branches lost when a previous call skipped them."""
+    _graph, objects, nodes, _ = two_input_graph
 
-    (gradient,) = _graph.backprop(objects["objective"], objects["mid"])
+    # Switch controls directly, then expand to all dependencies and restrict again.
+    gradients = []
+    for control in ("variable", "other_input", None, "variable"):
+        variable = None if control is None else objects[control]
+        _graph.backprop(objects["objective"], variable)
+        gradients.append((nodes["variable"].grad, nodes["other_input"].grad))
 
-    assert gradient == nodes["mid"].get_grad() == pytest.approx(3.0)
-    assert nodes["variable"].get_grad() is None
-
-
-def test_backprop_accumulates_in_specialised_nodes():
-    """Nodes of a derived node class receive their gradient as well."""
-
-    class DerivedNode(Node):
-        """Minimal test subclass for checking inherited gradient accumulation."""
-
-    _graph, objects, _, _ = _build(
-        [
-            ("e1", "variable", "objective", 2.0),
-        ],
-        node_types={"variable": DerivedNode},
-    )
-
-    (gradient,) = _graph.backprop(objects["objective"], objects["variable"])
-
-    assert gradient == pytest.approx(2.0)
+    assert gradients == [(2.0, None), (None, 3.0), (2.0, 3.0), (2.0, None)]
 
 
-def test_backprop_seeds_all_gradient_functions_of_the_function():
-    """A function that is reached by several edges is seeded on all of them."""
-    # The paths merge in the function itself, so the function has two gradient
-    # functions, in contrast to the paths merging in an intermediate node.
-    _graph, objects, _, _ = _build(
-        [
-            ("e_upper_in", "variable", "upper", 2.0),
-            ("e_upper_out", "upper", "objective", 3.0),
-            ("e_lower_in", "variable", "lower", 5.0),
-            ("e_lower_out", "lower", "objective", 7.0),
-        ]
-    )
-
-    (gradient,) = _graph.backprop(objects["objective"], objects["variable"])
-
-    assert gradient == pytest.approx(2.0 * 3.0 + 5.0 * 7.0)
+# Several controls in one propagation
 
 
-def test_backprop_without_a_variable_stores_gradients_only_in_dependency_leaves(
-    two_input_graph,
+@pytest.mark.parametrize(
+    "controls", [("outer", "inner"), ("inner", "outer"), ("outer", "latest")]
+)
+def test_backprop_returns_the_total_derivative_of_nested_controls(controls):
+    """Catch conflating versions or losing a path into an intermediate control."""
+    # Propagating the union of the paths without capturing the inner control leaves it
+    # without a gradient, stopping at the inner control drops the outer control's path
+    # through it, and following only the first control's path loses the outer control
+    # in the second order.
+    _graph = graph.Graph()
+    value = object()
+    nodes = {
+        "outer": Node(value),
+        "inner": Node(value, version=1),
+        "objective": Node(object()),
+    }
+    for node in nodes.values():
+        _graph.add_node(node)
+    for start, end, factor in (
+        ("outer", "inner", 2.0),
+        ("inner", "objective", 3.0),
+        ("outer", "objective", 5.0),
+    ):
+        edge = ScaledEdge(nodes[start], nodes[end], factor=factor)
+        nodes[end].grad_fns.append(edge)
+        _graph.add_edge(edge)
+    # The object selects the latest version; an exact node selects its own version.
+    inputs = {"outer": nodes["outer"], "inner": nodes["inner"], "latest": value}
+    expected = {"outer": 2.0 * 3.0 + 5.0, "inner": 3.0, "latest": 3.0}
+
+    gradients = _graph.backprop(nodes["objective"], [inputs[name] for name in controls])
+
+    assert gradients == pytest.approx(tuple(expected[name] for name in controls))
+
+
+@pytest.mark.parametrize(
+    "controls", [("objective",), ("variable", "objective")], ids=["alone", "with_input"]
+)
+def test_backprop_returns_the_seed_as_the_derivative_of_the_function_itself(
+    single_edge_graph, seed, controls
 ):
-    """Unrestricted propagation stores gradients in the objective's dependency leaves."""
-    _graph, objects, nodes, _ = two_input_graph
+    """Catch a function that loses or hardcodes its self-derivative.
 
-    assert _graph.backprop(objects["objective"]) is None
+    Alone, the path is empty, so the seed is only stored if the function is captured
+    without an edge being executed. With its input, the function's own input edge is on
+    the path, so the seed is only stored if the function is captured as a control rather
+    than as the end of a path.
+    """
+    _graph, objects, _, _ = single_edge_graph
+    expected = {"variable": 2.0 * seed, "objective": seed}
 
-    assert nodes["variable"].get_grad() == pytest.approx(2.0)
-    assert nodes["other_input"].get_grad() == pytest.approx(3.0)
-    assert nodes["form"].get_grad() is None
-    assert nodes["unrelated_input"].get_grad() is None
-    assert nodes["post_processing"].get_grad() is None
-
-
-def test_backprop_clears_gradients_when_switching_controls(two_input_graph):
-    """Selecting another control clears the previously stored gradient."""
-    _graph, objects, nodes, _ = two_input_graph
-
-    _graph.backprop(objects["objective"], objects["variable"])
-    assert nodes["variable"].get_grad() == pytest.approx(2.0)
-
-    _graph.backprop(objects["objective"], objects["other_input"])
-    assert nodes["variable"].get_grad() is None
-
-
-def test_backprop_scales_the_derivative_with_the_seed(chain_graph, seed):
-    """The seed is the adjoint value of the function and scales the derivative."""
-    _graph, objects, _, _ = chain_graph
-
-    (gradient,) = _graph.backprop(
-        objects["objective"], objects["variable"], grad_outputs=seed
+    gradients = _graph.backprop(
+        objects["objective"], [objects[name] for name in controls], grad_outputs=seed
     )
 
-    assert gradient == pytest.approx(seed * 6.0)
+    assert gradients == pytest.approx(tuple(expected[name] for name in controls))
 
 
-def test_backprop_of_the_function_with_respect_to_itself(single_edge_graph, seed):
-    """The derivative of the function with respect to itself is the seed."""
-    _graph, objects, nodes, _ = single_edge_graph
+def test_backprop_returns_a_gradient_that_does_not_share_the_seed(single_edge_graph):
+    """Catch a gradient stored as the vector it arrived in.
+
+    The derivative of a function with respect to itself arrives as the seed, which the
+    caller still holds, so scaling the returned gradient, e.g. for an optimisation step,
+    would change the seed of the next call.
+    """
+    _graph, objects, _, _ = single_edge_graph
+    seed = PETSc.Vec().createSeq(1, comm=PETSc.COMM_SELF)
+    seed.set(1.0)
 
     (gradient,) = _graph.backprop(
         objects["objective"], objects["objective"], grad_outputs=seed
     )
+    gradient.scale(3.0)
 
-    assert gradient == nodes["objective"].get_grad() == pytest.approx(seed)
-
-
-# Execution of marked edges
+    np.testing.assert_allclose(seed.array_r, [1.0])
 
 
-def test_backprop_skips_unmarked_objective_inputs():
-    """Only the selected input's edge is executed when seeding the objective."""
-    # Select the second input to catch propagation that always seeds the first.
-    _graph, objects, _, edges = _build(
+@pytest.mark.parametrize(
+    "controls", [("variable", "other_input"), ("other_input", "variable")]
+)
+def test_backprop_returns_each_controls_derivative_in_requested_order(
+    two_input_graph, controls
+):
+    """Catch dropping a control or returning gradients in recording order."""
+    _graph, objects, _, _ = two_input_graph
+    expected = {"variable": 2.0, "other_input": 3.0}
+
+    gradients = _graph.backprop(
+        objects["objective"], [objects[name] for name in controls]
+    )
+
+    assert gradients == pytest.approx(tuple(expected[name] for name in controls))
+
+
+@pytest.mark.parametrize("next_control", ["variable", None])
+def test_backprop_clears_the_gradients_of_the_previous_controls(
+    chain_graph, next_control
+):
+    """A former control keeps no gradient once the next call selects other controls.
+
+    Catch a gradient that is not reset between calls, and a control of an earlier call
+    that keeps storing gradients in the node although it is only passed through.
+    """
+    _graph, objects, nodes, _ = chain_graph
+    _graph.backprop(objects["objective"], [objects["variable"], objects["mid"]])
+
+    variable = None if next_control is None else objects[next_control]
+    _graph.backprop(objects["objective"], variable)
+
+    assert nodes["mid"].grad is None
+
+
+# Shared branches
+
+
+def test_backprop_sums_both_paths_through_a_shared_input():
+    """Catch losing or double-counting a branch at a shared intermediate value."""
+    _graph, objects, _, _ = _build(
         [
-            ("other", "other_input", "objective", 3.0),
-            ("e_variable", "variable", "objective", 2.0),
+            ("e_in", "variable", "mid", 2.0),
+            ("e_upper", "mid", "upper", 3.0),
+            ("e_lower", "mid", "lower", 5.0),
+            ("e_upper_out", "upper", "objective", 7.0),
+            ("e_lower_out", "lower", "objective", 11.0),
+        ]
+    )
+    (gradient,) = _graph.backprop(objects["objective"], objects["variable"])
+
+    assert gradient == pytest.approx(2.0 * (3.0 * 7.0 + 5.0 * 11.0))
+
+
+def test_backprop_includes_dependencies_added_after_a_previous_call(chain_graph):
+    """Catch stale topology silently omitting a newly recorded derivative path."""
+    _graph, objects, nodes, _ = chain_graph
+    (before,) = _graph.backprop(objects["objective"], objects["variable"])
+
+    added = Node(object())
+    _graph.add_node(added)
+    for predecessor, successor, factor in (
+        (nodes["objective"], added, 7.0),
+        (nodes["mid"], added, 5.0),
+    ):
+        edge = ScaledEdge(predecessor, successor, factor=factor)
+        successor.grad_fns.append(edge)
+        _graph.add_edge(edge)
+
+    (after,) = _graph.backprop(added, objects["variable"])
+
+    assert (before, after) == pytest.approx((6.0, 2.0 * (3.0 * 7.0 + 5.0)))
+
+
+# Several functions in one propagation
+
+
+@pytest.fixture
+def two_output_graph():
+    """Two functions of one control, sharing the control's input operation."""
+    return _build(
+        [
+            ("e_shared", "variable", "form", 2.0),
+            ("e_first", "form", "first", 3.0),
+            ("e_second", "form", "second", 5.0),
         ]
     )
 
-    _graph.backprop(objects["objective"], objects["variable"])
 
-    assert _executed_edges(edges) == {"e_variable"}
+def test_backprop_weights_several_functions_by_their_seeds(two_output_graph):
+    """The gradient of several functions is the sum of theirs, weighted by the seeds."""
+    # Seeding only the first function, or pairing the seeds with the wrong functions,
+    # returns a gradient without error.
+    _graph, objects, _, _ = two_output_graph
 
-
-@pytest.mark.parametrize("control, expected", [("mid", {"e2"}), ("objective", set())])
-def test_backprop_stops_execution_at_the_selected_control(
-    chain_graph, control, expected
-):
-    """The selected control's own input operations must not execute."""
-    _graph, objects, _, edges = chain_graph
-
-    _graph.backprop(objects["objective"], objects[control])
-
-    assert _executed_edges(edges) == expected
-
-
-def test_backprop_updates_execution_when_switching_controls_and_modes(two_input_graph):
-    """Each query executes its own paths without losing previously skipped branches."""
-    _graph, objects, _, edges = two_input_graph
-
-    # Switch controls directly, then expand to all dependencies and restrict again.
-    for control, expected in (
-        ("variable", {"e1", "e_form"}),
-        ("other_input", {"other", "e_form"}),
-        (None, {"e1", "other", "e_form"}),
-        ("variable", {"e1", "e_form"}),
-    ):
-        for edge in edges.values():
-            edge.called = False
-
-        variable = None if control is None else objects[control]
-        _graph.backprop(objects["objective"], variable)
-
-        assert _executed_edges(edges) == expected, f"control={control!r}"
-
-
-# Validation of the arguments
-
-
-@pytest.mark.parametrize("argument", [0, 1], ids=["function", "variable"])
-def test_backprop_rejects_an_unknown_argument(single_edge_graph, argument):
-    """Report the supplied object's id, rather than id(None) from a failed lookup."""
-    _graph, objects, _, _ = single_edge_graph
-    unregistered = object()
-    arguments = [objects["objective"], objects["variable"]]
-    arguments[argument] = unregistered
-
-    with pytest.raises(ValueError, match=str(id(unregistered))):
-        _graph.backprop(*arguments)
-
-
-def test_backprop_with_an_unknown_argument_keeps_the_previous_gradients(
-    single_edge_graph,
-):
-    """A call that is rejected does not discard the gradients of the previous call."""
-    _graph, objects, nodes, _ = single_edge_graph
-
-    _graph.backprop(objects["objective"], objects["variable"])
-    assert nodes["variable"].get_grad() == pytest.approx(2.0)
-
-    unregistered = object()
-    with pytest.raises(ValueError):
-        _graph.backprop(objects["objective"], unregistered)
-
-    assert nodes["variable"].get_grad() == pytest.approx(2.0)
-
-
-def test_backprop_rejects_a_variable_that_cannot_store_a_gradient():
-    """A variable without a numerical value is rejected before the propagation."""
-    _graph, objects, _, edges = _build(
-        [
-            ("e1", "variable", "objective", 2.0),
-        ],
-        node_types={"variable": AbstractNode},
+    gradients = _graph.backprop(
+        [objects["first"], objects["second"]],
+        objects["variable"],
+        grad_outputs=[7.0, 11.0],
     )
 
-    with pytest.raises(TypeError):
-        _graph.backprop(objects["objective"], objects["variable"])
-
-    assert _executed_edges(edges) == set()
+    assert gradients == pytest.approx((2.0 * (3.0 * 7.0 + 5.0 * 11.0),))
 
 
-def test_backprop_rejects_a_variable_the_function_does_not_depend_on(chain_graph):
-    """A variable the function does not depend on is rejected instead of yielding None."""
-    _graph, objects, nodes, _ = chain_graph
+def test_topological_order_follows_the_edges_and_breaks_ties_by_recording():
+    """The order of a propagation is the unique topological order of the nodes the
+    function depends on, with ties broken by recording order."""
+    # p is recorded before its input a, like a problem recorded by its constructor.
+    # Taking the recording order puts p before a, so backprop, which reverses the order,
+    # passes on the adjoint of a before p has added its contribution to it, without
+    # error. Taking networkx's topological_sort puts b before p, an order that holds on
+    # every rank only by networkx's iteration order. Not restricting the order to the
+    # dependencies of f also visits x.
+    _graph, _, nodes, _ = _build(
+        [
+            ("e1", "p", "c", 1.0),
+            ("e2", "a", "p", 1.0),
+            ("e3", "b", "f", 1.0),
+            ("e4", "c", "f", 1.0),
+            ("e5", "a", "x", 1.0),
+        ]
+    )
 
-    with pytest.raises(ValueError):
-        _graph.backprop(objects["mid"], objects["objective"])
+    order = _graph._topological_order([nodes["f"]])
 
-    assert nodes["mid"].get_grad() is None
+    assert order == [nodes[name] for name in ("a", "p", "c", "b", "f")]

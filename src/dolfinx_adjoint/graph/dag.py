@@ -208,21 +208,10 @@ class Graph:
         return f"Graph object with {len(self.nodes)} nodes and {len(self.edges)} edges."
 
     @staticmethod
-    def _edge_color(edge: Edge) -> str:
-        """Get the color of an edge, black if it is part of the marked path"""
-        return "black" if getattr(edge, "marked", False) else "grey"
-
-    @classmethod
-    def _add_edge_to_networkx(cls, nx_graph: DiGraph, edge: Edge) -> None:
+    def _add_edge_to_networkx(nx_graph: DiGraph, edge: Edge) -> None:
         """Add an edge of the graph to its networkx representation"""
         tag = "" if edge.__class__.__name__ == "Edge" else edge.__class__.__name__
-        nx_graph.add_edge(
-            edge.predecessor,
-            edge.successor,
-            tag=tag,
-            color=cls._edge_color(edge),
-            edge=edge,
-        )
+        nx_graph.add_edge(edge.predecessor, edge.successor, tag=tag, edge=edge)
 
     @staticmethod
     def _add_node_to_networkx(nx_graph: DiGraph, node: AbstractNode) -> None:
@@ -240,23 +229,14 @@ class Graph:
             nx_graph (nx.DiGraph): The networkx graph representation of the graph
         """
 
-        if self._nx_graph is not None:
-            # Update dynamic edge colors based on marking
+        if self._nx_graph is None:
+            nx_graph = nx.DiGraph()
+            for node in self.nodes:
+                self._add_node_to_networkx(nx_graph, node)
             for edge in self.edges:
-                u = edge.predecessor
-                v = edge.successor
-                if self._nx_graph.has_edge(u, v):
-                    self._nx_graph[u][v]["color"] = self._edge_color(edge)
-            return self._nx_graph
-
-        nx_graph = nx.DiGraph()
-        for node in self.nodes:
-            self._add_node_to_networkx(nx_graph, node)
-        for edge in self.edges:
-            self._add_edge_to_networkx(nx_graph, edge)
-
-        self._nx_graph = nx_graph
-        return nx_graph
+                self._add_edge_to_networkx(nx_graph, edge)
+            self._nx_graph = nx_graph
+        return self._nx_graph
 
     def _get_networkx_graph(self) -> DiGraph:
         """Get the networkx graph representation of the graph.
@@ -269,61 +249,49 @@ class Graph:
         else:
             return self._nx_graph
 
-    def visualise(self, filename="graph.pdf", style="planar", print_edge_labels=True):
+    def visualise(
+        self, filename="graph.pdf", style="planar", print_edge_labels=True, path=None
+    ):
         """Visualise the graph
 
         Args:
             filename (str, optional): The filename of the visualisation. Defaults to "graph.pdf".
             style (str, optional): The style of the visualisation. Defaults to "planar".
             print_edge_labels (bool, optional): Whether to print the edge labels. Defaults to True.
+            path (set, optional): The set of edges to be highlighted in the visualisation. Defaults to None.
 
         """
+
         import matplotlib.pyplot as plt
 
         plt.figure(figsize=(10, 8))
         nx_graph = self.to_networkx()
         labels = nx.get_node_attributes(nx_graph, "name")
         edge_labels = nx.get_edge_attributes(nx_graph, "tag")
-        edge_colors = nx.get_edge_attributes(nx_graph, "color")
+        path = set() if path is None else path
+        edge_colors = {
+            key: "black" if edge in path else "grey"
+            for key, edge in nx.get_edge_attributes(nx_graph, "edge").items()
+        }
         node_colors = nx.get_node_attributes(nx_graph, "color")
-        if style == "planar":
-            nx.draw_planar(
-                nx_graph,
-                labels=labels,
-                node_color=node_colors.values(),
-                edge_color=edge_colors.values(),
-                with_labels=True,
-            )
-            edge_pos = nx.planar_layout(nx_graph)
-        elif style == "shell":
-            nx.draw_shell(
-                nx_graph,
-                labels=labels,
-                node_color=node_colors.values(),
-                edge_color=edge_colors.values(),
-                with_labels=True,
-            )
-            edge_pos = nx.shell_layout(nx_graph)
-        elif style == "random":
-            nx.draw_random(
-                nx_graph,
-                labels=labels,
-                node_color=node_colors.values(),
-                edge_color=edge_colors.values(),
-                with_labels=True,
-            )
-            edge_pos = nx.random_layout(nx_graph)
-        else:
-            if style != "spring":
-                print("Given style is not implemented. Using spring layout")
-            nx.draw(
-                nx_graph,
-                labels=labels,
-                node_color=node_colors.values(),
-                edge_color=edge_colors.values(),
-                with_labels=True,
-            )
-            edge_pos = nx.spring_layout(nx_graph)
+        layouts = {
+            "planar": nx.planar_layout,
+            "shell": nx.shell_layout,
+            "random": nx.random_layout,
+            "spring": nx.spring_layout,
+        }
+        if style not in layouts:
+            print("Given style is not implemented. Using spring layout")
+        # One layout places both the graph and its edge labels.
+        edge_pos = layouts.get(style, nx.spring_layout)(nx_graph)
+        nx.draw(
+            nx_graph,
+            pos=edge_pos,
+            labels=labels,
+            node_color=node_colors.values(),
+            edge_color=edge_colors.values(),
+            with_labels=True,
+        )
         if print_edge_labels:
             nx.draw_networkx_edge_labels(
                 nx_graph, pos=edge_pos, edge_labels=edge_labels

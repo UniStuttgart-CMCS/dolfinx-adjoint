@@ -250,21 +250,28 @@ class Graph:
             return self._nx_graph
 
     def visualise(
-        self, filename="graph.pdf", style="planar", print_edge_labels=True, path=None
+        self,
+        ax=None,
+        style: str | Callable = "planar",
+        print_edge_labels=True,
+        path=None,
     ):
         """Visualise the graph
 
         Args:
-            filename (str, optional): The filename of the visualisation. Defaults to "graph.pdf".
+            ax (matplotlib.axes.Axes, optional): The axes to draw the graph in. If None, a new figure and axes are created. Defaults to None.
             style (str, optional): The style of the visualisation. Defaults to "planar".
             print_edge_labels (bool, optional): Whether to print the edge labels. Defaults to True.
             path (set, optional): The set of edges to be highlighted in the visualisation. Defaults to None.
 
+        Returns:
+            matplotlib.axes.Axes: The axes containing the visualisation of the graph.
         """
 
         import matplotlib.pyplot as plt
 
-        plt.figure(figsize=(10, 8))
+        if ax is None:
+            _, ax = plt.subplots(figsize=(10, 8))
         nx_graph = self.to_networkx()
         labels = nx.get_node_attributes(nx_graph, "name")
         edge_labels = nx.get_edge_attributes(nx_graph, "tag")
@@ -280,13 +287,15 @@ class Graph:
             "random": nx.random_layout,
             "spring": nx.spring_layout,
         }
-        if style not in layouts:
-            print("Given style is not implemented. Using spring layout")
         # One layout places both the graph and its edge labels.
-        edge_pos = layouts.get(style, nx.spring_layout)(nx_graph)
+        if not callable(style):
+            edge_pos = layouts.get(style, nx.spring_layout)(nx_graph)
+        else:
+            edge_pos = style(nx_graph)
         nx.draw(
             nx_graph,
             pos=edge_pos,
+            ax=ax,
             labels=labels,
             node_color=node_colors.values(),
             edge_color=edge_colors.values(),
@@ -294,9 +303,9 @@ class Graph:
         )
         if print_edge_labels:
             nx.draw_networkx_edge_labels(
-                nx_graph, pos=edge_pos, edge_labels=edge_labels
+                nx_graph, pos=edge_pos, edge_labels=edge_labels, ax=ax
             )
-        plt.savefig(filename)
+        return ax
 
     def backprop(self, outputs, inputs=None, grad_outputs=1.0):
         """

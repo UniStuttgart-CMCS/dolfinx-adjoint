@@ -32,8 +32,8 @@ def dirichletbc(*args, **kwargs):
     output = fem.dirichletbc(*args, **kwargs)
     if _graph is None:
         return output
+    # The value as passed: DOLFINx 0.11 returns its C++ object from ``output.g``.
     arguments = bind_arguments(fem.dirichletbc, *args, **kwargs)
-    arguments["value"] = output.g
 
     if _graph.get_node(arguments["value"]) is None:
         return output

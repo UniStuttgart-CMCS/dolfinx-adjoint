@@ -353,7 +353,13 @@ class ProblemNode(graph.AbstractNode):
         inputs = [
             *self.residual.coefficients(),
             *self.residual.constants(),
-            *(bc.g for bc in self._recorded_bcs or ()),
+            # A recorded condition's value as passed: DOLFINx 0.11 returns its C++
+            # object from ``bc.g``. An untracked condition stays constant.
+            *(
+                node.arguments["value"]
+                for bc in self._recorded_bcs or ()
+                if (node := _graph.get_node(bc)) is not None
+            ),
         ]
         self.values = {
             value: (

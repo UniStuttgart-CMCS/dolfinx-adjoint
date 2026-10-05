@@ -258,6 +258,10 @@ def test_boundary_condition_reused_in_a_loop_applies_the_latest_value(
     assert all(np.allclose(a, b) for a, b in zip(reused, per_step, strict=True))
 
 
+@pytest.mark.skipif(
+    dolfinx.__version__ < "0.12",
+    reason="DOLFINx 0.11 keeps a scalar value without a Constant to control.",
+)
 def test_boundary_condition_given_as_a_scalar_is_a_control_through_its_value(
     unit_square_mesh_per_comm: mesh.Mesh,
 ) -> None:

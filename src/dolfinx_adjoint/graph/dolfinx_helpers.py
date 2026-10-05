@@ -88,10 +88,19 @@ def zeros(like: PETSc.Vec) -> PETSc.Vec:
 
 
 def scalar(constant, gradient: PETSc.Vec):
-    """The gradient of a Constant from the vector of its components."""
-    if constant.ufl_shape:
-        return gradient
+    """The gradient of a Constant from the vector of its components.
+
+    The components are copied to a vector on the communicator of the mesh of the
+    Constant, as the vector they are assembled into lives on the communicator of a
+    temporary real space, which DOLFINx 0.11 frees with that space.
+    """
     try:
-        return gradient.sum()
+        if not constant.ufl_shape:
+            return gradient.sum()
+        components = PETSc.Vec().createMPI(
+            gradient.getSizes(), comm=constant_mesh(constant).comm
+        )
+        components.array_w[:] = gradient.array_r[: components.getLocalSize()]
+        return components
     finally:
         gradient.destroy()

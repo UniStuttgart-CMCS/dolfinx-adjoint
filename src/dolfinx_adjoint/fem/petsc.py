@@ -371,15 +371,6 @@ class LinearProblemNode(ProblemNode):
         self.L = None
         self.kwargs = None
 
-    def __call__(self):
-        """
-        The initialization of the LinearProblem object.
-
-        """
-        output = LinearProblemBase(a=self.a, L=self.L, **self.kwargs)
-        self.object = output
-        return output
-
 
 class NonlinearProblemNode(ProblemNode):
     """
@@ -447,15 +438,6 @@ class NonlinearProblemNode(ProblemNode):
         self.u = None
         self.kwargs = None
 
-    def __call__(self):
-        """
-        The initialization of the NonlinearProblem object.
-
-        """
-        output = NonlinearProblemBase(F=self.F, u=self.u, **self.kwargs)
-        self.object = output
-        return output
-
 
 class SolveNode(graph.Node):
     """
@@ -487,15 +469,6 @@ class SolveNode(graph.Node):
         """
         super().release()
         self.initial_values = None
-
-    def __call__(self):
-        """
-        Solve the stored linear or nonlinear problem.
-
-        """
-
-        self.object.x.array[:] = self.initial_values[:]
-        self.problemNode.object.solve()
 
 
 class Problem_Coefficient_Edge(graph.Edge):

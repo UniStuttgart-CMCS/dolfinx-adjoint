@@ -87,13 +87,3 @@ class AssembleScalarNode(graph.Node):
         super().release()
         self.M = None
 
-    def __call__(self):
-        """
-        The call method to perform the assemble operation.
-
-        Returns:
-            float: The computed scalar on the local rank
-        """
-        output = fem.assemble_scalar(self.M)
-        self.object = output
-        return output

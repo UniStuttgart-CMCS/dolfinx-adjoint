@@ -9,8 +9,7 @@ class AbstractNode:
     The base class for nodes in the graph.
 
     AbstractNodes provide the functionality to represent the object and operations in the graph.
-    To create a new node, the user should inherit from this class and implement the __call__ method or
-    use the this AbstractNode class to directly create a new node without any additional functionalities.
+     To create a new node, the user can inherit from this class or use it directly.
 
     The AbstractNode class is used to represent objects without any numerical value.
 
@@ -57,15 +56,6 @@ class AbstractNode:
         else:
             return str(self._name)
 
-    def set_object(self, object: Any):
-        """
-        Sets the object of the node.
-
-        Args:
-            object (Any): The object that the node represents
-        """
-        self.object = object
-
     def release(self):
         """
         Releases the values saved in the node.
@@ -73,19 +63,6 @@ class AbstractNode:
         """
         self.object = None
 
-    def __call__(self, *args, **kwargs):
-        """
-        This method is a placeholder for the computation of the node.
-
-        The __call__ method is used to compute the node with the given arguments.
-        The method should be overwritten by the user to implement the computation of the node.
-
-        Args:
-            *args: Variable length argument list
-            **kwargs: Arbitrary keyword arguments
-
-        """
-        pass
 
     def __str__(self):
         """

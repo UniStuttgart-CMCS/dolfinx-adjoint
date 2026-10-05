@@ -156,34 +156,6 @@ def test_problem_constant_gradient_on_measures(
             np.testing.assert_allclose(gradient.array_r, expected.ravel())
 
 
-def test_problem_without_u_replays_into_the_solution_it_holds(
-    unit_square_mesh: mesh.Mesh,
-) -> None:
-    """Catch a replay that rebuilds the problem around a function the caller cannot see."""
-    domain = unit_square_mesh
-    graph_ = Graph()
-    c = fem_ad.Constant(domain, ScalarType(2.0), graph=graph_)
-
-    V = fem.functionspace(domain, ("Lagrange", 1))
-    u = ufl.TrialFunction(V)
-    v = ufl.TestFunction(V)
-    problem = fem_ad.petsc.LinearProblem(
-        c * ufl.inner(u, v) * ufl.dx,
-        ufl.conj(v) * ufl.dx,
-        petsc_options_prefix="test_problem_without_u_",
-        petsc_options={"ksp_type": "preonly", "pc_type": "lu"},
-        graph=graph_,
-    )
-    problem.solve(graph=graph_)
-
-    c.value = 4.0
-    graph_.recalculate()
-
-    # P1 contains the exact solution u = c⁻¹, which is 0.25 after the update and 0.5
-    # for as long as the replay solves anything but this function.
-    assert np.allclose(problem.u.x.array, 0.25)
-
-
 def test_problem_records_a_solution_that_is_not_in_the_graph(
     unit_square_mesh: mesh.Mesh,
 ) -> None:

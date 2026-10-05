@@ -591,14 +591,6 @@ class Graph:
         for node in self.nodes:
             node.release()
 
-    def recalculate(self):
-        """
-        Recalculate the graph
-
-        """
-        for node in self.nodes:
-            node()
-
     def __del__(self):
         """
         Destructor for the graph

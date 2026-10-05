@@ -120,18 +120,6 @@ class FormNode(graph.AbstractNode):
         self.ufl_form = None
         self.kwargs = None
 
-    def __call__(self):
-        """
-        The call method to perform the compile form operation.
-
-        Returns:
-            Compiled finite element Form.
-
-        """
-        output = fem.form(self.ufl_form, **self.kwargs)
-        self.object = output
-        return output
-
 
 class Form_Coefficient_Edge(graph.Edge):
     """

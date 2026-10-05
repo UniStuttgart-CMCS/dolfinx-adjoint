@@ -9,8 +9,8 @@ from dolfinx import default_scalar_type, fem, mesh
 from mpi4py import MPI
 from petsc4py.PETSc import ScalarType
 
-from dolfinx_adjoint import Graph
-from dolfinx_adjoint import fem as fem_ad
+from dolfinx_graph_ad import Graph
+from dolfinx_graph_ad import fem as fem_ad
 
 _DIRECT = {"ksp_type": "preonly", "pc_type": "lu"}
 

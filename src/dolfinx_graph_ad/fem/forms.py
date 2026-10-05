@@ -3,14 +3,14 @@ from typing import Any
 import ufl
 from dolfinx import fem
 
-import dolfinx_adjoint.graph as graph
-from dolfinx_adjoint.fem._calculus import (
+import dolfinx_graph_ad.graph as graph
+from dolfinx_graph_ad.fem._calculus import (
     assemble_vector,
     real_function,
     ufl_derivative_constant,
 )
-from dolfinx_adjoint.fem._recording import bind_arguments
-from dolfinx_adjoint.graph.dolfinx_helpers import resolve_capture, scalar, zeros
+from dolfinx_graph_ad.fem._recording import bind_arguments
+from dolfinx_graph_ad.graph.dolfinx_helpers import resolve_capture, scalar, zeros
 
 
 def form(*args, **kwargs):

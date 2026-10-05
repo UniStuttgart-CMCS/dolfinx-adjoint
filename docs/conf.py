@@ -6,7 +6,7 @@ ROOT = Path(__file__).resolve().parents[1]
 SRC = ROOT / "src"
 sys.path.insert(0, str(SRC))
 
-project = "DOLFINx-ADJOINT"
+project = "DOLFINx-GraphAD"
 author = "Niklas Hornischer"
 copyright = f"{datetime.now().year}, {author}"
 
@@ -26,10 +26,10 @@ intersphinx_mapping = {
 
 templates_path = ["_templates"]
 # The generated root supplies API navigation through an include, not a wrapper page.
-exclude_patterns = ["_build", "api/dolfinx_adjoint.rst", "Thumbs.db", ".DS_Store"]
+exclude_patterns = ["_build", "api/dolfinx_graph_ad.rst", "Thumbs.db", ".DS_Store"]
 
 html_theme = "sphinx_rtd_theme"
-html_title = "DOLFINx-ADJOINT docs"
+html_title = "DOLFINx-GraphAD docs"
 html_theme_options = {
     "collapse_navigation": False,
     "navigation_depth": 4,

@@ -10,7 +10,7 @@ with rate two.
 import numpy as np
 from dolfinx import fem
 
-from dolfinx_adjoint.verification import _perturbed, _rates, _remainders
+from dolfinx_graph_ad.verification import _perturbed, _rates, _remainders
 
 
 def test_Heat_taylor_initial(heat_equation_problem, heat_equation_evaluation):

@@ -5,8 +5,8 @@ import weakref
 import pytest
 from dolfinx import fem
 
-from dolfinx_adjoint import Edge, Graph, Node
-from dolfinx_adjoint import fem as fem_ad
+from dolfinx_graph_ad import Edge, Graph, Node
+from dolfinx_graph_ad import fem as fem_ad
 
 
 class _Value:

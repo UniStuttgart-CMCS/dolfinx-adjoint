@@ -9,7 +9,7 @@ checking that the first-order Taylor remainder converges with rate two.
 import numpy as np
 import pytest
 
-from dolfinx_adjoint.verification import _rates, _remainders
+from dolfinx_graph_ad.verification import _rates, _remainders
 
 
 @pytest.mark.parametrize("parameter", ["lambda_", "mu"])

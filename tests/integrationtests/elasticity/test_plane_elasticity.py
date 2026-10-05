@@ -5,8 +5,8 @@ Taylor tests for the plane elasticity adjoint gradients.
 import numpy as np
 from dolfinx import fem
 
-from dolfinx_adjoint import Graph
-from dolfinx_adjoint.verification import _perturbed, _rates, _remainders
+from dolfinx_graph_ad import Graph
+from dolfinx_graph_ad.verification import _perturbed, _rates, _remainders
 
 
 def test_plane_elasticity_taylor_bc(plane_elasticity_problem):

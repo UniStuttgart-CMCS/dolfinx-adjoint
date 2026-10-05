@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 from dolfinx import fem, mesh
 
-from dolfinx_adjoint.verification import _perturbed, _rates
+from dolfinx_graph_ad.verification import _perturbed, _rates
 
 
 @pytest.mark.parametrize("steps", [[1e-2, 5e-3, 2.5e-3], [1e-1, 1e-2, 1e-3]])

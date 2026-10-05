@@ -3,7 +3,7 @@ requires = ["setuptools>=64"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "DOLFINx-ADJOINT"
+name = "dolfinx-graph-ad"
 version = "0.4.0"
 authors = [
   { name = "Niklas Hornischer", email = "niklas.hornischer@ians.uni-stuttgart.de" },

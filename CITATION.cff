@@ -1,9 +1,9 @@
 cff-version: 1.2.0
 message: "If you use this software, please cite it as below."
-title: "DOLFINxADJOINT"
+title: "DOLFINx-GraphAD"
 version: 0.10.0
 doi: "10.5281/zenodo.18769071"
-url: "https://github.com/UniStuttgart-CMCS/dolfinx-adjoint"
+url: "https://github.com/UniStuttgart-CMCS/dolfinx-graph-ad"
 authors:
   - family-names: "Hornischer"
     given-names: "Niklas"

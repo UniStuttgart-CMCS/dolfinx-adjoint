@@ -1,7 +1,7 @@
 import weakref
 from typing import Any
 
-from dolfinx_adjoint.graph.node import Node
+from dolfinx_graph_ad.graph.node import Node
 
 
 class Edge:

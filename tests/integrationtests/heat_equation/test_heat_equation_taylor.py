@@ -38,3 +38,26 @@ def test_Heat_taylor_initial(heat_equation_problem, heat_equation_evaluation):
     np.testing.assert_allclose(
         _rates(R1, steps), 2 * np.ones(len(steps) - 1), atol=0.05
     )
+
+
+def test_Heat_taylor_conductivity(heat_equation_problem, heat_equation_evaluation):
+    """Taylor test for J with respect to the conductivity.
+
+    The derivative of every time step depends on the state of that step, so an adjoint
+    evaluated at the final state of the loop converges with rate one instead of two.
+    """
+    evaluation = heat_equation_evaluation
+    (gradient,) = evaluation.graph.backprop(evaluation.J, evaluation.conductivity)
+    steps = 1e-2 * 0.5 ** np.arange(4)
+
+    R0, R1 = _remainders(
+        lambda step: heat_equation_problem.evaluate(conductivity=1.0 + step).value,
+        evaluation.value,
+        gradient,
+        steps,
+    )
+
+    np.testing.assert_allclose(_rates(R0, steps), np.ones(len(steps) - 1), atol=0.05)
+    np.testing.assert_allclose(
+        _rates(R1, steps), 2 * np.ones(len(steps) - 1), atol=0.05
+    )

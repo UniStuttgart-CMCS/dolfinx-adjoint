@@ -61,6 +61,9 @@ must be recorded with ``graph=``. Raw array writes do not create versions and ar
 not detected. Untracked values are read in place and must remain unchanged until
 differentiation finishes.
 
+Each recorded Function assignment saves its own copy of the assigned values,
+including ghost entries.
+
 An output Function need not be tracked before its first solve. Without a recorded
 initial value, the first solve produces version 0; otherwise it produces the next
 version. Later solves record subsequent versions automatically unless ``version=``
@@ -76,6 +79,3 @@ to recorded forms, problems and boundary-condition constructors.
 
 Scalar assembly still returns the rank-local value. Keep that object for
 ``backprop`` and reduce a separate value over the mesh communicator for reporting.
-Derivatives retain the forward quadrature degree when it is inferred without an
-explicit degree or supplied as a nonnegative degree. Explicit negative degrees
-remain a known limitation of the current quadrature preservation.

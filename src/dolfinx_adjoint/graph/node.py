@@ -1,6 +1,6 @@
-import copy
 from typing import Any
 
+import numpy as np
 import petsc4py.PETSc as PETSc
 
 
@@ -56,13 +56,17 @@ class AbstractNode:
         else:
             return str(self._name)
 
+    @property
+    def snapshot(self) -> None:
+        """None, since a node without a numerical value saves nothing, see Node."""
+        return None
+
     def release(self):
         """
         Releases the values saved in the node.
 
         """
         self.object = None
-
 
     def __str__(self):
         """
@@ -81,20 +85,21 @@ class Node(AbstractNode):
     The Node class inherits from the AbstractNode class and provides the functionality to represent the object and operations in the graph.
 
     Attributes:
-        data (Any): The object that the node represents
         grad (float or PETSc.Vec): The gradient of the object
+        snapshot (Any or None): The saved copy of this version's value, or None when
+            no copy is held. Subclasses implement ``save`` to create it.
 
     """
 
     def __init__(self, object: Any, **kwargs):
         super().__init__(object, **kwargs)
-        self.data = copy.copy(object)
         self.grad = None
+        self._snapshot = None
 
-    def get_object(self):
-        """The object the node represents, or None once the node is released."""
-
-        return self.object
+    @property
+    def snapshot(self) -> Any | None:
+        """The snapshot owned by this version, or None; only the node replaces it."""
+        return self._snapshot
 
     def reset_grad(self):
         self.grad = None
@@ -112,15 +117,18 @@ class Node(AbstractNode):
         """
 
         if self.grad is None:
-            self.grad = value.copy() if isinstance(value, PETSc.Vec) else value
+            self.grad = (
+                value.copy() if isinstance(value, (PETSc.Vec, np.ndarray)) else value
+            )
         else:
             self.grad += value
 
     def release(self):
         """
-        Releases the object, the data and the gradient of the node.
+        Releases the object, the snapshot and the gradient of the node.
 
         """
+
         super().release()
-        self.data = None
         self.grad = None
+        self._snapshot = None

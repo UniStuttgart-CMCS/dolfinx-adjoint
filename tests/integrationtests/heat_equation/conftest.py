@@ -1,4 +1,4 @@
-"""The heat equation."""
+"""The heat equation, with a constant or a state-dependent conductivity."""
 
 from __future__ import annotations
 
@@ -22,6 +22,7 @@ class HeatEquationEvaluation:
     problem: HeatEquationProblem
     graph: Graph | None
     initial_guess: fem_ad.Function
+    conductivity: fem_ad.Constant
     u_prev: fem_ad.Function
     u_next: fem_ad.Function
     u_iterations: list[fem_ad.Function]  # States of all time steps, for the test.
@@ -34,8 +35,9 @@ class HeatEquationEvaluation:
 class HeatEquationProblem:
     """Set up the heat equation problem that will be used in all tests."""
 
-    def __init__(self, domain: mesh.Mesh):
+    def __init__(self, domain: mesh.Mesh, state_dependent: bool):
         self.domain = domain
+        self.state_dependent = state_dependent
         self.V = fem.functionspace(domain, ("Lagrange", 1))
         self.dt = 0.01
         self.T = 0.05
@@ -84,14 +86,18 @@ class HeatEquationProblem:
         self,
         *,
         initial_guess: fem_ad.Function | None = None,
+        conductivity: float = 1.0,
         graph: Graph | None = None,
     ) -> HeatEquationEvaluation:
-        """Step the problem through time and assemble J at the given control value.
+        """Step the problem through time and assemble J at the given control values.
 
         Args:
             initial_guess: Initial temperature Function in this problem's state space,
                 copied for the solve. Defaults to the interpolation of
                 15 x[0] (1 - x[0]) x[1] (1 - x[1]).
+            conductivity: Conductivity, common to all ranks. Defaults to 1.0, the one
+                the true data is generated with. A state-dependent conductivity is
+                this value times 1 + u².
             graph: A fresh graph to record into, or None for plain DOLFINx.
 
         Returns:
@@ -110,23 +116,63 @@ class HeatEquationProblem:
         if graph is not None:
             graph.track(initial)
 
-        u_prev = initial.copy(graph=graph, name="u_prev")
+        # Its derivative ∇u·∇v differs in every step, which the adjoint of each step
+        # has to evaluate at the state of that step.
+        kappa = fem_ad.Constant(
+            self.domain, ScalarType(conductivity), name="κ", graph=graph
+        )
+        u_prev = fem_ad.Function(self.V, name="u_prev")
+        u_prev.assign(initial, graph=graph)
         u_next = fem_ad.Function(self.V, name="u_next", graph=graph)
         u = ufl.TrialFunction(self.V)
         v = ufl.TestFunction(self.V)
 
         a = (
             ufl.inner(u / self.dt_constant, v) * ufl.dx
-            + ufl.inner(ufl.grad(u), ufl.grad(v)) * ufl.dx
+            + kappa * ufl.inner(ufl.grad(u), ufl.grad(v)) * ufl.dx
         )
         L = ufl.inner(u_prev / self.dt_constant, v) * ufl.dx
+
+        # A state-dependent conductivity also makes the Jacobian of every step depend on
+        # the state of that step.
+        if self.state_dependent:
+            conductivity_ = kappa * (1 + u_next**2)
+        else:
+            conductivity_ = kappa
 
         # Write the residual directly to avoid creating a UFL Replacer cycle.
         F = (
             ufl.inner(u_next / self.dt_constant, v) * ufl.dx
-            + ufl.inner(ufl.grad(u_next), ufl.grad(v)) * ufl.dx
+            + conductivity_ * ufl.inner(ufl.grad(u_next), ufl.grad(v)) * ufl.dx
             - L
         )
+
+        # One problem is solved in every step, as in DOLFINx, so that each solve is
+        # recorded with the versions of u_prev and u_next of its own step.
+        if self.state_dependent:
+            problem = fem_ad.petsc.NonlinearProblem(
+                F,
+                u_next,
+                petsc_options_prefix="forward_nonlinear",
+                petsc_options={
+                    **self.petsc_options,
+                    "snes_atol": 1e-12,
+                    "snes_rtol": 1e-12,
+                    "snes_error_if_not_converged": True,
+                },
+                graph=graph,
+                adjoint_petsc_options=self.petsc_options,
+            )
+        else:
+            problem = fem_ad.petsc.LinearProblem(
+                a,
+                L,
+                u=u_next,
+                petsc_options_prefix="forward_linear",
+                petsc_options=self.petsc_options,
+                graph=graph,
+                adjoint_petsc_options=self.petsc_options,
+            )
 
         t = 0.0
         i = 0
@@ -135,15 +181,6 @@ class HeatEquationProblem:
         u_iterations = [initial.copy()]
         while t < self.T:
             i += 1
-            problem = fem_ad.petsc.LinearProblem(
-                a,
-                L,
-                u=u_next,
-                petsc_options_prefix="forward_linear",
-                petsc_options=self.petsc_options,
-                adjoint_petsc_options=self.petsc_options,
-                graph=graph,
-            )
             problem.solve(graph=graph, version=i)
             t += self.dt
             u_prev.assign(u_next, graph=graph, version=i)
@@ -162,6 +199,7 @@ class HeatEquationProblem:
             problem=self,
             graph=graph,
             initial_guess=initial,
+            conductivity=kappa,
             u_prev=u_prev,
             u_next=u_next,
             u_iterations=u_iterations,
@@ -172,10 +210,20 @@ class HeatEquationProblem:
         )
 
 
+@pytest.fixture(
+    scope="module",
+    params=[False, True],
+    ids=["constant", "state-dependent"],
+)
+def state_dependent(request) -> bool:
+    """Return whether the heat equation's conductivity depends on the state."""
+    return request.param
+
+
 @pytest.fixture(scope="module")
-def heat_equation_problem(unit_square_mesh) -> HeatEquationProblem:
+def heat_equation_problem(unit_square_mesh, state_dependent) -> HeatEquationProblem:
     """Share the space and the true data across evaluations."""
-    return HeatEquationProblem(unit_square_mesh)
+    return HeatEquationProblem(unit_square_mesh, state_dependent)
 
 
 @pytest.fixture(scope="module")

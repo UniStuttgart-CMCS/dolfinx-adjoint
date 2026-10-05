@@ -1,21 +1,18 @@
-"""
-The edge is the transpose of the operation the condition performs, so every test compares
-the two through the identity
-
-    <edge(u), v> = <u, condition(v)>,
-
-for an accumulated gradient u on the space the condition constrains and a value v of the
-condition.
-"""
+"""Unit tests for the derivative with respect to the value of a Dirichlet condition."""
 
 import dolfinx
 import numpy as np
 import pytest
+import ufl
 from basix.ufl import element, mixed_element
 from dolfinx import default_scalar_type, fem, mesh
+from mpi4py import MPI
+from petsc4py.PETSc import ScalarType
 
 from dolfinx_adjoint import Graph
 from dolfinx_adjoint import fem as fem_ad
+
+_DIRECT = {"ksp_type": "preonly", "pc_type": "lu"}
 
 
 def _distinct_function(V: fem.FunctionSpace, reverse: bool = False) -> fem_ad.Function:
@@ -34,111 +31,123 @@ def _distinct_function(V: fem.FunctionSpace, reverse: bool = False) -> fem_ad.Fu
     return function
 
 
-@pytest.mark.parametrize(
-    "value_shape", [(), (2,)], ids=["scalar space", "blocked space"]
-)
-def test_gradient_of_a_function_value(
-    value_shape: tuple[int, ...], unit_square_mesh_per_comm: mesh.Mesh
-):
-    """The gradient of a function value on the space the condition constrains restricts
-    the accumulated gradient to the entries the condition sets."""
-    graph_ = Graph()
-    domain = unit_square_mesh_per_comm
-    facet_dim = domain.topology.dim - 1
-    domain.topology.create_connectivity(facet_dim, domain.topology.dim)
-    facets = mesh.exterior_facet_indices(domain.topology)
+def _boundary(domain: mesh.Mesh, boundary: str = "exterior") -> tuple:
+    """The dimension and the local indices of the entities the condition is set on.
 
-    V = fem.functionspace(domain, ("Lagrange", 1, value_shape))
-    dofs = fem.locate_dofs_topological(V, facet_dim, facets)
-
-    # A value on the space it constrains is passed without the space itself.
-    g = fem_ad.Function(V, name="g", graph=graph_)
-    bc = fem_ad.dirichletbc(g, dofs, graph=graph_)
-
-    u = _distinct_function(V)
-    v = _distinct_function(V, reverse=True)
-
-    # What the condition does with v, performed by DOLFINx.
-    condition_of_v = dolfinx.fem.Function(V)
-    dolfinx.fem.dirichletbc(v, dofs).set(condition_of_v.x.array)
-
-    edge = graph_.get_edge(graph_.get_node(g), graph_.get_node(bc))
-    assert np.isclose(
-        edge.calculate_adjoint(u.x.petsc_vec).dot(v.x.petsc_vec),
-        u.x.petsc_vec.dot(condition_of_v.x.petsc_vec),
-    )
-
-
-def test_gradient_of_a_condition_on_two_dofs(unit_square_mesh: mesh.Mesh):
-    """A condition holding exactly two dofs is transposed like any other.
-
-    Its dofs are a flat array of two entries, which catches an overload taking them for
-    the pair of arrays a value on a different space is given with.
+    The exterior facets, or the vertices at the two corners of the left boundary.
     """
 
-    graph_ = Graph()
-    V = fem.functionspace(unit_square_mesh, ("Lagrange", 1))
-    dofs = fem.locate_dofs_geometrical(
-        V,
+    tdim = domain.topology.dim
+    if boundary == "exterior":
+        domain.topology.create_connectivity(tdim - 1, tdim)
+        return tdim - 1, mesh.exterior_facet_indices(domain.topology)
+    domain.topology.create_connectivity(0, tdim)
+    corners = mesh.locate_entities(
+        domain,
+        0,
         lambda x: np.isclose(x[0], 0.0)
         & (np.isclose(x[1], 0.0) | np.isclose(x[1], 1.0)),
     )
-    # The two corners of the left boundary, which the condition is then built on.
-    assert dofs.size == 2
+    return 0, corners
 
-    g = fem_ad.Function(V, name="g", graph=graph_)
-    bc = fem_ad.dirichletbc(g, dofs, graph=graph_)
 
-    u = _distinct_function(V)
-    v = _distinct_function(V, reverse=True)
-
-    # What the condition does with v, performed by DOLFINx.
-    condition_of_v = dolfinx.fem.Function(V)
-    dolfinx.fem.dirichletbc(v, dofs).set(condition_of_v.x.array)
-
-    edge = graph_.get_edge(graph_.get_node(g), graph_.get_node(bc))
-    assert np.isclose(
-        edge.calculate_adjoint(u.x.petsc_vec).dot(v.x.petsc_vec),
-        u.x.petsc_vec.dot(condition_of_v.x.petsc_vec),
+def _extension(V: fem.FunctionSpace, bc, graph: Graph | None = None) -> float:
+    """J = ∫ u·u on the calling rank, for the extension u of the value of the condition."""
+    uh = fem_ad.Function(V, graph=graph)
+    u, v = ufl.TrialFunction(V), ufl.TestFunction(V)
+    zero = dolfinx.fem.Function(V)
+    problem = fem_ad.petsc.LinearProblem(
+        ufl.inner(u, v) * ufl.dx,
+        ufl.inner(zero, v) * ufl.dx,
+        u=uh,
+        bcs=[bc],
+        petsc_options_prefix="test_dirichletbc_",
+        petsc_options=_DIRECT,
+        graph=graph,
+        adjoint_petsc_options=_DIRECT,
     )
+    problem.solve(graph=graph)
+    return fem_ad.assemble_scalar(
+        fem_ad.form(ufl.inner(uh, uh) * ufl.dx, graph=graph), graph=graph
+    )
+
+
+@pytest.mark.parametrize(
+    "value_shape, boundary",
+    [((), "exterior"), ((2,), "exterior"), ((), "corners")],
+    ids=["scalar space", "blocked space", "two dofs"],
+)
+def test_function_value_is_differentiated_like_the_solve(
+    unit_square_mesh_per_comm: mesh.Mesh,
+    value_shape: tuple,
+    boundary: str,
+    mode: str,
+    central_difference,
+    directional_derivative,
+):
+    """Catch a value on the space it constrains paired with other dofs than DOLFINx sets."""
+    domain = unit_square_mesh_per_comm
+    V = fem.functionspace(domain, ("Lagrange", 1, value_shape))
+    dofs = fem.locate_dofs_topological(V, *_boundary(domain, boundary))
+    value = _distinct_function(V)
+    direction = _distinct_function(V, reverse=True)
+
+    graph_ = Graph()
+    g = fem_ad.Function(V)
+    g.x.array[:] = value.x.array
+    graph_.track(g)
+    J = _extension(V, fem_ad.dirichletbc(g, dofs, graph=graph_), graph_)
+    derivative = directional_derivative(graph_, J, g, direction, mode, domain.comm)
+
+    bc = dolfinx.fem.dirichletbc(value, dofs)
+    difference = central_difference(
+        lambda: domain.comm.allreduce(_extension(V, bc), op=MPI.SUM),
+        value,
+        direction,
+        step=1.0,
+    )
+    assert np.isclose(derivative, difference)
 
 
 @pytest.mark.parametrize(
     "sub_space", [0, 1], ids=["vector sub space", "scalar sub space"]
 )
-def test_gradient_of_a_value_on_a_collapsed_space(
-    sub_space: int, unit_square_mesh_per_comm: mesh.Mesh
+def test_value_on_a_collapsed_space_is_differentiated_like_the_solve(
+    unit_square_mesh_per_comm: mesh.Mesh,
+    sub_space: int,
+    mode: str,
+    central_difference,
+    directional_derivative,
 ):
-    """The gradient of a function value on the collapsed sub space a condition constraint is moved into that space along the pairs of dofs the condition is given."""
+    """Catch a value on a collapsed sub space moved into the mixed space along other
+    pairs of dofs than those the condition is given."""
 
-    graph_ = Graph()
     domain = unit_square_mesh_per_comm
-    facet_dim = domain.topology.dim - 1
-    domain.topology.create_connectivity(facet_dim, domain.topology.dim)
-    facets = mesh.exterior_facet_indices(domain.topology)
-
     u_elem = element("Lagrange", domain.basix_cell(), 2, shape=(2,))
     p_elem = element("Lagrange", domain.basix_cell(), 1)
     V = fem.functionspace(domain, mixed_element([u_elem, p_elem]))
     V_sub, _ = V.sub(sub_space).collapse()
-    dofs = fem.locate_dofs_topological((V.sub(sub_space), V_sub), facet_dim, facets)
+    dofs = fem.locate_dofs_topological((V.sub(sub_space), V_sub), *_boundary(domain))
+    value = _distinct_function(V_sub)
+    direction = _distinct_function(V_sub, reverse=True)
 
-    # A value on a different space than the one it constrains is passed with it.
-    g = fem_ad.Function(V_sub, name="g", graph=graph_)
-    bc = fem_ad.dirichletbc(g, dofs, V.sub(sub_space), graph=graph_)
-
-    u = _distinct_function(V)
-    v = _distinct_function(V_sub, reverse=True)
-
-    # What the condition does with v, performed by DOLFINx.
-    condition_of_v = dolfinx.fem.Function(V)
-    dolfinx.fem.dirichletbc(v, dofs, V.sub(sub_space)).set(condition_of_v.x.array)
-
-    edge = graph_.get_edge(graph_.get_node(g), graph_.get_node(bc))
-    assert np.isclose(
-        edge.calculate_adjoint(u.x.petsc_vec).dot(v.x.petsc_vec),
-        u.x.petsc_vec.dot(condition_of_v.x.petsc_vec),
+    graph_ = Graph()
+    g = fem_ad.Function(V_sub)
+    g.x.array[:] = value.x.array
+    graph_.track(g)
+    J = _extension(
+        V, fem_ad.dirichletbc(g, dofs, V.sub(sub_space), graph=graph_), graph_
     )
+    derivative = directional_derivative(graph_, J, g, direction, mode, domain.comm)
+
+    bc = dolfinx.fem.dirichletbc(value, dofs, V.sub(sub_space))
+    difference = central_difference(
+        lambda: domain.comm.allreduce(_extension(V, bc), op=MPI.SUM),
+        value,
+        direction,
+        step=1.0,
+    )
+    assert np.isclose(derivative, difference)
 
 
 @pytest.mark.parametrize(
@@ -146,43 +155,144 @@ def test_gradient_of_a_value_on_a_collapsed_space(
     [1.0, (1.0, 2.0), ((1.0, 2.0), (3.0, 4.0))],
     ids=["scalar constant", "vector constant", "tensor constant"],
 )
-def test_gradient_of_a_constant_value(
-    value: float | tuple, unit_square_mesh_per_comm: mesh.Mesh
+def test_constant_value_is_differentiated_like_the_solve(
+    unit_square_mesh_per_comm: mesh.Mesh,
+    value: float | tuple,
+    mode: str,
+    central_difference,
+    directional_derivative,
 ):
-    """The gradient of a constant value adds up the accumulated gradient over the entries the condition sets."""
-    graph_ = Graph()
+    """Catch a constant broadcast onto the dofs otherwise than DOLFINx does it, or its
+    derivative summed over the dofs of one rank only."""
+
     domain = unit_square_mesh_per_comm
-    facet_dim = domain.topology.dim - 1
-    domain.topology.create_connectivity(facet_dim, domain.topology.dim)
-    facets = mesh.exterior_facet_indices(domain.topology)
-
     value = np.asarray(value, dtype=default_scalar_type)
-    V = fem.functionspace(domain, ("Lagrange", 1, np.shape(value)))
-    dofs = fem.locate_dofs_topological(V, facet_dim, facets)
+    direction = np.linspace(0.5, -1.5, value.size, dtype=default_scalar_type).reshape(
+        value.shape
+    )
+    V = fem.functionspace(domain, ("Lagrange", 1, value.shape))
+    dofs = fem.locate_dofs_topological(V, *_boundary(domain))
 
-    # A constant is broadcast onto the space it constrains, which it is passed with.
-    c = fem_ad.Constant(domain, value, name="c", graph=graph_)
-    bc = fem_ad.dirichletbc(c, dofs, V, graph=graph_)
+    graph_ = Graph()
+    c = fem_ad.Constant(domain, value, graph=graph_)
+    J = _extension(V, fem_ad.dirichletbc(c, dofs, V, graph=graph_), graph_)
+    derivative = directional_derivative(graph_, J, c, direction, mode, domain.comm)
 
-    u = _distinct_function(V)
+    constant = dolfinx.fem.Constant(domain, value)
+    bc = dolfinx.fem.dirichletbc(constant, dofs, V)
+    difference = central_difference(
+        lambda: domain.comm.allreduce(_extension(V, bc), op=MPI.SUM),
+        constant,
+        direction,
+        step=1.0,
+    )
+    assert np.isclose(derivative, difference)
 
-    # Determine every component of the transpose using DOLFINx's forward operation.
-    # Every rank visits the same directions; each dot counts owned entries globally.
-    expected = np.zeros_like(value)
-    for component in np.ndindex(value.shape):
-        direction = np.zeros_like(value)
-        direction[component] = 1.0
-        condition_of_direction = dolfinx.fem.Function(V)
-        direction_bc = dolfinx.fem.dirichletbc(direction, dofs, V)
-        direction_bc.set(condition_of_direction.x.array)
-        expected[component] = u.x.petsc_vec.dot(condition_of_direction.x.petsc_vec)
 
-    edge = graph_.get_edge(graph_.get_node(c), graph_.get_node(bc))
-    gradient = edge.calculate_adjoint(u.x.petsc_vec)
+def _gradients_of_a_boundary_control_per_step(
+    domain: mesh.Mesh, reuse: bool
+) -> list[np.ndarray]:
+    """Solve -Δu + u = 1 twice, with u = g on the left boundary.
 
-    if value.ndim == 0:
-        assert np.isscalar(gradient) and np.isclose(gradient, expected)
-    else:
-        assert gradient.getSize() == expected.size
-        if gradient.getLocalSize() > 0:
-            np.testing.assert_allclose(gradient.array_r, expected.ravel())
+    Before each solve, g is assigned a control of its own, and each solve contributes
+    ∫ u² to the functionals, which are differentiated with respect to both controls.
+
+    Args:
+        domain: The mesh.
+        reuse: Whether one boundary condition and one problem serve both solves, as in
+            DOLFINx, or both are set up after each assignment.
+
+    Returns:
+        The gradient with respect to each control.
+    """
+    graph_ = Graph()
+    V = fem.functionspace(domain, ("Lagrange", 1))
+    dofs = fem.locate_dofs_geometrical(V, lambda x: np.isclose(x[0], 0.0))
+    controls = []
+    for step in range(2):
+        control = fem_ad.Function(V, name=f"g{step}")
+        control.interpolate(lambda x, step=step: 1.0 + (step + 1) * x[1])
+        graph_.track(control)
+        controls.append(control)
+    g = fem_ad.Function(V, name="g", graph=graph_)
+    uh = fem_ad.Function(V, name="uh", graph=graph_)
+
+    u = ufl.TrialFunction(V)
+    v = ufl.TestFunction(V)
+    a = (ufl.inner(ufl.grad(u), ufl.grad(v)) + ufl.inner(u, v)) * ufl.dx
+    L = ufl.conj(v) * ufl.dx
+    direct_solver = {"ksp_type": "preonly", "pc_type": "lu"}
+
+    def set_up():
+        bc = fem_ad.dirichletbc(g, dofs, graph=graph_)
+        return fem_ad.petsc.LinearProblem(
+            a,
+            L,
+            u=uh,
+            bcs=[bc],
+            petsc_options_prefix="test_problem_boundary_control_per_step_",
+            petsc_options=direct_solver,
+            graph=graph_,
+            adjoint_petsc_options=direct_solver,
+        )
+
+    problem = set_up() if reuse else None
+    J = fem_ad.form(ufl.inner(uh, uh) * ufl.dx, graph=graph_)
+    functionals = []
+    for control in controls:
+        g.assign(control, graph=graph_)
+        (problem if reuse else set_up()).solve(graph=graph_)
+        functionals.append(fem_ad.assemble_scalar(J, graph=graph_))
+
+    gradients = graph_.backprop(functionals, controls)
+    return [gradient.array.copy() for gradient in gradients]
+
+
+def test_boundary_condition_reused_in_a_loop_applies_the_latest_value(
+    unit_square_mesh: mesh.Mesh,
+) -> None:
+    """Catch a boundary condition whose edge starts at the version it was created with."""
+    reused = _gradients_of_a_boundary_control_per_step(unit_square_mesh, reuse=True)
+    per_step = _gradients_of_a_boundary_control_per_step(unit_square_mesh, reuse=False)
+
+    assert all(np.allclose(a, b) for a, b in zip(reused, per_step, strict=True))
+
+
+def test_boundary_condition_given_as_a_scalar_is_a_control_through_its_value(
+    unit_square_mesh_per_comm: mesh.Mesh,
+) -> None:
+    """Catch a condition given as a scalar whose value cannot become a control."""
+    domain = unit_square_mesh_per_comm
+    graph_ = Graph()
+    V = fem.functionspace(domain, ("Lagrange", 1))
+    dofs = fem.locate_dofs_geometrical(
+        V,
+        lambda x: np.isclose(x[0], 0.0)
+        | np.isclose(x[0], 1.0)
+        | np.isclose(x[1], 0.0)
+        | np.isclose(x[1], 1.0),
+    )
+    native_bc = dolfinx.fem.dirichletbc(ScalarType(3.0), dofs, V)
+    graph_.track(native_bc.g)
+    bc = fem_ad.dirichletbc(native_bc.g, dofs, V, graph=graph_)
+    uh = fem_ad.Function(V, name="uh", graph=graph_)
+    u = ufl.TrialFunction(V)
+    v = ufl.TestFunction(V)
+    zero = fem_ad.Constant(domain, ScalarType(0.0))
+    direct_solver = {"ksp_type": "preonly", "pc_type": "lu"}
+    problem = fem_ad.petsc.LinearProblem(
+        ufl.inner(ufl.grad(u), ufl.grad(v)) * ufl.dx,
+        zero * ufl.conj(v) * ufl.dx,
+        u=uh,
+        bcs=[bc],
+        petsc_options_prefix="test_boundary_condition_given_as_a_scalar_",
+        petsc_options=direct_solver,
+        graph=graph_,
+        adjoint_petsc_options=direct_solver,
+    )
+    problem.solve(graph=graph_)
+    J = fem_ad.assemble_scalar(fem_ad.form(uh * ufl.dx, graph=graph_), graph=graph_)
+
+    (gradient,) = graph_.backprop(J, bc.g)
+
+    assert np.isclose(gradient, 1.0)

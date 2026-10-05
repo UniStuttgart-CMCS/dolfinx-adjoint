@@ -17,6 +17,7 @@ from dolfinx_adjoint.fem.bcs import DirichletBCNode
 from dolfinx_adjoint.fem.function import FunctionNode
 from dolfinx_adjoint.graph.dolfinx_helpers import resolve_capture, scalar, zeros
 
+
 class LinearProblem(LinearProblemBase):
     """OVERLOADS: :py:class:`dolfinx.fem.petsc.LinearProblem`.
     Linear problem class for solving the linear problem
@@ -164,7 +165,9 @@ class NonlinearProblem(NonlinearProblemBase):
 
     def solve(self, *args, **kwargs):
         """OVERLOADS: :py:meth:`dolfinx.fem.petsc.NonlinearProblem.solve`
+
         Solve the non-linear problem into the function u, which is returned.
+
         Args:
             args: Arguments to :py:meth:`dolfinx.fem.petsc.NonlinearProblem.solve`
             kwargs: Keyword arguments to :py:meth:`dolfinx.fem.petsc.NonlinearProblem.solve`
@@ -186,7 +189,7 @@ class NonlinearProblem(NonlinearProblemBase):
         version = kwargs.pop("version", None)
         if _graph is None:
             return super().solve(*args, **kwargs)
-        problem_node : ProblemNode = _graph.get_node(self)
+        problem_node: ProblemNode = _graph.get_node(self)
         if problem_node is None:
             raise ValueError(
                 f"{type(self).__name__} is not recorded in this graph, so its solve has no residual to differentiate. Pass the graph to its constructor."
@@ -441,8 +444,7 @@ class LinearProblemNode(ProblemNode):
 
     @property
     def residual(self):
-        """The residual F(u) = a(u) - L.
-        """
+        """The residual F(u) = a(u) - L."""
         if self._residual is None:
             u = self._recorded_state
             a, L = self._forms

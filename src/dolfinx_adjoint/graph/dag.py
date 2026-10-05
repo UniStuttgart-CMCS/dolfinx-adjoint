@@ -9,9 +9,9 @@ from dolfinx import fem
 from dolfinx.mesh import Mesh
 from networkx import DiGraph
 
+from dolfinx_adjoint.graph.dolfinx_helpers import add
 from dolfinx_adjoint.graph.edge import Edge
 from dolfinx_adjoint.graph.node import AbstractNode, Node
-from dolfinx_adjoint.graph.dolfinx_helpers import add
 
 
 class Graph:

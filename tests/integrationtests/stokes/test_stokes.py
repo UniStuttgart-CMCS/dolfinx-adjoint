@@ -13,7 +13,7 @@ from dolfinx.fem.petsc import LinearProblem
 from mpi4py import MPI
 
 
-def test_Stokes_dJdnu(stokes_problem):
+def test_Stokes_dJdnu(stokes_evaluation):
     """
     Test gradient of J with respect to viscosity ν.
 
@@ -39,16 +39,15 @@ def test_Stokes_dJdnu(stokes_problem):
 
         dJ/dν = θ^T * ∂F/∂ν + ∂J/∂ν                                  (2.5)
     """
-    mesh = stokes_problem["mesh"]
-    up = stokes_problem["up"]
-    nu = stokes_problem["nu"]
-    F = stokes_problem["F"]
-    J_form = stokes_problem["J_form"]
-    J = stokes_problem["J"]
-    bcs_dofs = stokes_problem["bcs_dofs"]
-    graph_ = stokes_problem["graph_"]
+    problem = stokes_evaluation.problem
+    up = stokes_evaluation.up
+    nu = stokes_evaluation.nu
+    F = stokes_evaluation.F
+    J_form = stokes_evaluation.J_form
+    J = stokes_evaluation.J
+    graph_ = stokes_evaluation.graph
 
-    DG0 = fem.functionspace(mesh, ("DG", 0))
+    DG0 = fem.functionspace(problem.domain, ("DG", 0))
     nu_function = fem.Function(DG0, name="nu")
     nu_function.x.array[:] = nu.value
 
@@ -62,7 +61,7 @@ def test_Stokes_dJdnu(stokes_problem):
 
     # Homogeneous conditions on all constrained velocity and pressure DOFs
     zero = fem.Function(up.function_space)
-    bcs_adjoint = fem.dirichletbc(zero, bcs_dofs)
+    bcs_adjoint = fem.dirichletbc(zero, problem.bcs_dofs)
 
     adjoint_solution = LinearProblem(
         ufl.adjoint(dFdu),
@@ -78,12 +77,14 @@ def test_Stokes_dJdnu(stokes_problem):
     ).solve()
     gradient = ufl.action(ufl.adjoint(dFdnu), adjoint_solution) + dJdnu
 
-    gradient = mesh.comm.allreduce(fem.assemble_scalar(fem.form(gradient)), op=MPI.SUM)
+    gradient = problem.domain.comm.allreduce(
+        fem.assemble_scalar(fem.form(gradient)), op=MPI.SUM
+    )
 
-    assert np.allclose(graph_.backprop(id(J), id(nu)), gradient)
+    assert np.allclose(graph_.backprop(J, nu)[0], gradient)
 
 
-def test_Stokes_dJdg(stokes_problem):
+def test_Stokes_dJdg(stokes_evaluation):
     """
     Test gradient of J with respect to boundary condition g.
 
@@ -117,17 +118,14 @@ def test_Stokes_dJdg(stokes_problem):
     We extract only the boundary values by multiplying with an identity matrix
     nonzero on the boundary.
     """
-    mesh = stokes_problem["mesh"]
-    V = stokes_problem["V"]
-    V_u_map = stokes_problem["V_u_map"]
-    up = stokes_problem["up"]
-    g = stokes_problem["g"]
-    F = stokes_problem["F"]
-    J_form = stokes_problem["J_form"]
-    J = stokes_problem["J"]
-    bcs_dofs = stokes_problem["bcs_dofs"]
-    dofs_obstacle = stokes_problem["dofs_obstacle"]
-    graph_ = stokes_problem["graph_"]
+    problem = stokes_evaluation.problem
+    V = problem.V
+    up = stokes_evaluation.up
+    g = stokes_evaluation.g
+    F = stokes_evaluation.F
+    J_form = stokes_evaluation.J_form
+    J = stokes_evaluation.J
+    graph_ = stokes_evaluation.graph
 
     argument = ufl.TrialFunction(V)
     dJdu = ufl.derivative(J_form, up, argument)
@@ -139,7 +137,7 @@ def test_Stokes_dJdg(stokes_problem):
 
     # Homogeneous conditions on all constrained velocity and pressure DOFs
     zero = fem.Function(up.function_space)
-    bcs_adjoint = fem.dirichletbc(zero, bcs_dofs)
+    bcs_adjoint = fem.dirichletbc(zero, problem.bcs_dofs)
 
     adjoint_solution = LinearProblem(
         ufl.adjoint(dFdu),
@@ -169,13 +167,14 @@ def test_Stokes_dJdg(stokes_problem):
 
     # Extract obstacle boundary values and map to the collapsed velocity space.
     boundary_gradient = fem.Function(V)
-    boundary_gradient.x.array[dofs_obstacle[0]] = (
-        gradient.array[dofs_obstacle[0]] + dJdup_vec.array[dofs_obstacle[0]]
+    boundary_gradient.x.array[problem.dofs_obstacle[0]] = (
+        gradient.array[problem.dofs_obstacle[0]]
+        + dJdup_vec.array[problem.dofs_obstacle[0]]
     )
-    dJdg_vec.array[:] += boundary_gradient.x.array[V_u_map]
+    dJdg_vec.array[:] += boundary_gradient.x.array[problem.V_u_map]
 
     # Compare automatic differentiation result with explicit adjoint calculation on the dofs owned by the calling rank.
-    assert mesh.comm.allreduce(
-        np.allclose(graph_.backprop(id(J), id(g)).array, dJdg_vec.petsc_vec.array),
+    assert problem.domain.comm.allreduce(
+        np.allclose(graph_.backprop(J, g)[0].array, dJdg_vec.petsc_vec.array),
         op=MPI.LAND,
     )

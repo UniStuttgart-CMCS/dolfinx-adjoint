@@ -1,4 +1,2 @@
 from . import fem
-from .edge import Edge
-from .graph import Graph
-from .node import AbstractNode, Node
+from .graph import AbstractNode, Edge, Graph, Node

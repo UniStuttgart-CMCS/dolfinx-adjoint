@@ -1,7 +1,7 @@
 from dolfinx import fem, la
 
 import dolfinx_adjoint.graph as graph
-from dolfinx_adjoint.utils import bind_arguments
+from dolfinx_adjoint.fem._recording import bind_arguments
 
 
 class Function(fem.Function):
@@ -69,11 +69,10 @@ class Function(fem.Function):
         function_node = graph.Node(result, name=result.name)
         _graph.add_node(function_node)
 
-        copied_node = _graph.get_node(id(self))
+        copied_node = _graph.get_node(self)
         copy_edge = graph.Edge(copied_node, function_node)
-        function_node.set_gradFuncs([copy_edge])
+        function_node.grad_fns = [copy_edge]
         _graph.add_edge(copy_edge)
-        copy_edge.set_next_functions(copied_node.get_gradFuncs())
 
         return result
 
@@ -86,7 +85,8 @@ class Function(fem.Function):
             graph (graph, optional): An additional keyword argument to specifier whether the assemble
                 operation should be added to the graph. If not present, the original functionality
                 of dolfinx is used without any additional functionalities.
-            version (int, optional): An additional keyword argument to specify the version of the operation in the graph. If not present, the version is set to 0.
+            version (int, optional): The recorded version of the target. Defaults to
+                the version after its latest recorded one, or 0 if it is unrecorded.
 
         Note:
             The node is added in any case, since it is the version of this function the
@@ -96,11 +96,14 @@ class Function(fem.Function):
         self.x.array[:] = function.x.array[:]
 
         _graph = kwargs.pop("graph", None)
-        version = kwargs.pop("version", 0)
+        version = kwargs.pop("version", None)
         if _graph is None:
             return
 
-        function_node = _graph.get_node(id(function))
+        function_node = _graph.get_node(function)
+        if version is None:
+            previous = _graph.get_node(self)
+            version = 0 if previous is None else previous.version + 1
 
         assign_node = graph.Node(self, name=self.name, version=version)
         _graph.add_node(assign_node)
@@ -109,9 +112,8 @@ class Function(fem.Function):
             return
 
         assign_edge = graph.Edge(function_node, assign_node)
-        assign_node.set_gradFuncs([assign_edge])
+        assign_node.grad_fns = [assign_edge]
         _graph.add_edge(assign_edge)
-        assign_edge.set_next_functions(function_node.get_gradFuncs())
 
 
 class Constant(fem.Constant):

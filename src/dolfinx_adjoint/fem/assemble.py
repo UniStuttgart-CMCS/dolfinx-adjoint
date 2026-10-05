@@ -3,7 +3,7 @@ from typing import Any
 from dolfinx import fem
 
 import dolfinx_adjoint.graph as graph
-from dolfinx_adjoint.utils import bind_arguments
+from dolfinx_adjoint.fem._recording import bind_arguments
 
 
 def assemble_scalar(*args, **kwargs):
@@ -42,15 +42,13 @@ def assemble_scalar(*args, **kwargs):
     _graph.add_node(assemble_node)
 
     # Create edge between form and assemble
-    form_node = _graph.get_node(id(M))
+    form_node = _graph.get_node(M)
 
     # The default edge is sufficient, since assembling a scalar does not require any additional operations
     # for the gradients
     assemble_edge = graph.Edge(form_node, assemble_node)
-    assemble_node.set_gradFuncs([assemble_edge])
+    assemble_node.grad_fns = [assemble_edge]
 
-    # Create connectivity to previous edges
-    assemble_edge.set_next_functions(form_node.get_gradFuncs())
     _graph.add_edge(assemble_edge)
 
     return output
@@ -80,6 +78,14 @@ class AssembleScalarNode(graph.Node):
         """
         super().__init__(object, name="AssembleScalar")
         self.M = M
+
+    def release(self):
+        """
+        Releases the scalar, its data and gradient and the form it was assembled from.
+
+        """
+        super().release()
+        self.M = None
 
     def __call__(self):
         """

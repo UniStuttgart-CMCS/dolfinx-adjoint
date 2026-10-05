@@ -6,7 +6,7 @@ from dolfinx import fem
 from petsc4py import PETSc
 
 import dolfinx_adjoint.graph as graph
-from dolfinx_adjoint.utils import bind_arguments
+from dolfinx_adjoint.fem._recording import bind_arguments
 
 
 def form(*args, **kwargs):
@@ -51,19 +51,18 @@ def form(*args, **kwargs):
 
     # Creating and adding edges to the graph if the coefficients are in the graph
     for coefficient in ufl_form.coefficients():
-        coefficient_node = _graph.get_node(id(coefficient))
+        coefficient_node = _graph.get_node(coefficient)
         if not coefficient_node == None:
             ctx = [ufl_form, coefficient]
             coefficient_edge = Form_Coefficient_Edge(
                 coefficient_node, form_node, ctx=ctx
             )
-            form_node.append_gradFuncs(coefficient_edge)
-            coefficient_edge.set_next_functions(coefficient_node.get_gradFuncs())
+            form_node.grad_fns.append(coefficient_edge)
             _graph.add_edge(coefficient_edge)
 
     # Creating and adding edges to the graph if the constants are in the graph
     for constant in ufl_form.constants():
-        constant_node = _graph.get_node(id(constant))
+        constant_node = _graph.get_node(constant)
         if not constant_node == None:
             R = fem.functionspace(
                 constant.domain,
@@ -74,8 +73,7 @@ def form(*args, **kwargs):
             function = fem.Function(R, dtype=constant.dtype)
             ctx = [ufl_form, constant, function]
             constant_edge = Form_Constant_Edge(constant_node, form_node, ctx=ctx)
-            form_node.append_gradFuncs(constant_edge)
-            constant_edge.set_next_functions(constant_node.get_gradFuncs())
+            form_node.grad_fns.append(constant_edge)
             _graph.add_edge(constant_edge)
 
     return output
@@ -113,6 +111,15 @@ class FormNode(graph.AbstractNode):
         self.ufl_form = ufl_form
         self.kwargs = kwargs
 
+    def release(self):
+        """
+        Releases the compiled form and the ufl form and arguments it was compiled from.
+
+        """
+        super().release()
+        self.ufl_form = None
+        self.kwargs = None
+
     def __call__(self):
         """
         The call method to perform the compile form operation.
@@ -132,7 +139,7 @@ class Form_Coefficient_Edge(graph.Edge):
 
     """
 
-    def calculate_adjoint(self):
+    def calculate_adjoint(self, value):
         """
         The method provides the adjoint equation for the derivative of the form with respect to a coefficient.
 
@@ -151,9 +158,9 @@ class Form_Coefficient_Edge(graph.Edge):
             fem.form(derivative, **self.successor.kwargs)
         )
 
+        with output.localForm() as local:
+            local.scale(value)
         output.ghostUpdate(addv=PETSc.InsertMode.ADD, mode=PETSc.ScatterMode.REVERSE)
-
-        output.scale(self.input_value)
 
         return output
 
@@ -163,7 +170,7 @@ class Form_Constant_Edge(graph.Edge):
     Edge providing the adjoint equation for the derivative of the form with respect to a constant.
     """
 
-    def calculate_adjoint(self):
+    def calculate_adjoint(self, value):
         """
         The method provides the adjoint equation for the derivative of the form with respect to a scalar constant.
 
@@ -184,8 +191,9 @@ class Form_Constant_Edge(graph.Edge):
         output = fem.petsc.assemble_vector(
             fem.form(derivative, **self.successor.kwargs)
         )
+        with output.localForm() as local:
+            local.scale(value)
         output.ghostUpdate(addv=PETSc.InsertMode.ADD, mode=PETSc.ScatterMode.REVERSE)
-        output.scale(self.input_value)
 
         # Shape distinguishes a scalar from a vector holding a single component.
         if not constant.ufl_shape:

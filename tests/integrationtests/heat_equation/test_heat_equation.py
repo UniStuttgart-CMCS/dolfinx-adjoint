@@ -12,7 +12,7 @@ from dolfinx.fem.petsc import LinearProblem
 from mpi4py import MPI
 
 
-def test_Heat_initial(heat_equation_problem):
+def test_Heat_initial(heat_equation_evaluation):
     """
     Test gradient of J with respect to the initial condition.
 
@@ -36,23 +36,23 @@ def test_Heat_initial(heat_equation_problem):
 
         $$\\left(\\frac{\\partial F^T}{\\partial u_N}\\right) \\lambda_N = - \\frac{\\partial J^T}{\\partial u_N}$$
 
-    and subsequent adjoint equations:
+    and subsequent adjoint equations, where $F_i(u_i, u_{i-1}) = 0$ is the residual equation of time step $i$:
 
-        $$\\left(\\frac{\\partial F^T}{\\partial u_{i-1}}\\right) \\lambda_{i-1} = - \\lambda_i \\frac{\\partial F^T}{\\partial u_{i-1}}$$
+        $$\\left(\\frac{\\partial F_{i-1}}{\\partial u_{i-1}}\\right)^T \\lambda_{i-1} = - \\left(\\frac{\\partial F_i}{\\partial u_{i-1}}\\right)^T \\lambda_i$$
 
     Finally:
 
         $$\\frac{dJ}{du_0} = \\lambda_1^T \\frac{\\partial F}{\\partial u_0} + \\frac{\\partial J}{\\partial u_0}$$
     """
-    domain = heat_equation_problem["domain"]
-    graph_ = heat_equation_problem["graph_"]
-    J_form = heat_equation_problem["J_form"]
-    J = heat_equation_problem["J"]
-    initial_guess = heat_equation_problem["initial_guess"]
-    u_next = heat_equation_problem["u_next"]
-    u_prev = heat_equation_problem["u_prev"]
-    F = heat_equation_problem["F"]
-    u_iterations = heat_equation_problem["u_iterations"]
+    domain = heat_equation_evaluation.problem.domain
+    graph_ = heat_equation_evaluation.graph
+    J_form = heat_equation_evaluation.J_form
+    J = heat_equation_evaluation.J
+    initial_guess = heat_equation_evaluation.initial_guess
+    u_next = heat_equation_evaluation.u_next
+    u_prev = heat_equation_evaluation.u_prev
+    F = heat_equation_evaluation.F
+    u_iterations = heat_equation_evaluation.u_iterations
 
     dJdu = ufl.derivative(J_form, u_next)
     dJdu_0 = ufl.derivative(J_form, initial_guess)
@@ -86,7 +86,7 @@ def test_Heat_initial(heat_equation_problem):
     # Compare automatic differentiation result with explicit adjoint calculation on the dofs owned by the calling rank.
     assert domain.comm.allreduce(
         np.allclose(
-            graph_.backprop(id(J), id(initial_guess)).array, gradient.petsc_vec.array
+            graph_.backprop(J, initial_guess)[0].array, gradient.petsc_vec.array
         ),
         op=MPI.LAND,
     )

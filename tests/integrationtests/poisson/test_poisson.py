@@ -14,7 +14,7 @@ from mpi4py import MPI
 from petsc4py.PETSc import ScalarType
 
 
-def test_Poisson_dJdf(poisson_problem):
+def test_Poisson_dJdf(poisson_evaluation):
     """
     Test gradient of J with respect to forcing term f.
 
@@ -39,14 +39,15 @@ def test_Poisson_dJdf(poisson_problem):
         dJ/df = λᵀ * ∂F/∂f + ∂J/∂f                                  (1.5)
     """
 
-    domain = poisson_problem["domain"]
-    F = poisson_problem["F"]
-    uh = poisson_problem["uh"]
-    f = poisson_problem["f"]
-    J_form = poisson_problem["J_form"]
-    bcs_dofs = poisson_problem["bcs_dofs"]
-    graph_ = poisson_problem["graph_"]
-    J = poisson_problem["J"]
+    problem = poisson_evaluation.problem
+    domain = problem.domain
+    F = poisson_evaluation.F
+    uh = poisson_evaluation.u
+    f = poisson_evaluation.f
+    J_form = poisson_evaluation.J_form
+    bcs_dofs = problem.bcs_dofs
+    graph_ = poisson_evaluation.graph
+    J = poisson_evaluation.J
 
     dFdu = ufl.derivative(F, uh)
     dFdf = ufl.derivative(F, f)
@@ -80,12 +81,12 @@ def test_Poisson_dJdf(poisson_problem):
 
     # Compare automatic differentiation result with explicit adjoint calculation on the dofs owned by the calling rank.
     assert domain.comm.allreduce(
-        np.allclose(graph_.backprop(id(J), id(f)).array, gradient_df.petsc_vec.array),
+        np.allclose(graph_.backprop(J, f)[0].array, gradient_df.petsc_vec.array),
         op=MPI.LAND,
     )
 
 
-def test_Poisson_dJdnu(poisson_problem):
+def test_Poisson_dJdnu(poisson_evaluation):
     """
     Test gradient of J with respect to diffusion coefficient ν.
 
@@ -109,14 +110,15 @@ def test_Poisson_dJdnu(poisson_problem):
     and then compute the gradient of J(u) with respect to ν using (2.3).
         dJ/dν = λᵀ * ∂F/∂ν + ∂J/∂ν                                  (2.5)
     """
-    domain = poisson_problem["domain"]
-    F = poisson_problem["F"]
-    uh = poisson_problem["uh"]
-    nu = poisson_problem["nu"]
-    J_form = poisson_problem["J_form"]
-    bcs_dofs = poisson_problem["bcs_dofs"]
-    graph_ = poisson_problem["graph_"]
-    J = poisson_problem["J"]
+    problem = poisson_evaluation.problem
+    domain = problem.domain
+    F = poisson_evaluation.F
+    uh = poisson_evaluation.u
+    nu = poisson_evaluation.nu
+    J_form = poisson_evaluation.J_form
+    bcs_dofs = problem.bcs_dofs
+    graph_ = poisson_evaluation.graph
+    J = poisson_evaluation.J
 
     DG0 = fem.functionspace(domain, ("DG", 0))
     nu_function = fem.Function(DG0, name="nu")
@@ -156,10 +158,10 @@ def test_Poisson_dJdnu(poisson_problem):
     )
 
     # Compare automatic differentiation result with explicit adjoint calculation
-    assert np.allclose(graph_.backprop(id(J), id(nu)), gradient)
+    assert np.allclose(graph_.backprop(J, nu)[0], gradient)
 
 
-def test_Poisson_dJdbc(poisson_problem):
+def test_Poisson_dJdbc(poisson_evaluation):
     """
     Test gradient of J with respect to boundary condition u_D.
 
@@ -182,9 +184,9 @@ def test_Poisson_dJdbc(poisson_problem):
     by lifting the linear term. With the form F = a - L = 0, we get the assembled form F = A*u - b = 0.
     The boundary conditions are now applied by lifting the b vector:
         b = b - α A (u_D - x₀)
-    where α is a scaling factor (in this case α=-1) and x_0 is some weird thing that is not important here.
+    where α is a scaling factor and x₀ a given vector (α = 1 and x₀ = 0 for a linear problem).
     The term ∂F/∂u_D is now given by
-        ∂F/∂u_D = - α A
+        ∂F/∂u_D = α A = A
 
     Our adjoint approach thus is to solve the adjoint problem
         ∂Fᵀ/∂u * λ =  - ∂Jᵀ/∂u                                      (3.4)
@@ -204,15 +206,16 @@ def test_Poisson_dJdbc(poisson_problem):
     on all of Ω and not only on the part of ∂Ω where the boundary condition is applied. We
     extract those values and set everything else to zero.
     """
-    domain = poisson_problem["domain"]
-    F = poisson_problem["F"]
-    uh = poisson_problem["uh"]
-    uD_control = poisson_problem["uD_control"]
-    J_form = poisson_problem["J_form"]
-    control_dofs = poisson_problem["control_dofs"]
-    bcs_dofs = poisson_problem["bcs_dofs"]
-    graph_ = poisson_problem["graph_"]
-    J = poisson_problem["J"]
+    problem = poisson_evaluation.problem
+    domain = problem.domain
+    F = poisson_evaluation.F
+    uh = poisson_evaluation.u
+    uD_control = poisson_evaluation.u_D
+    J_form = poisson_evaluation.J_form
+    control_dofs = problem.control_dofs
+    bcs_dofs = problem.bcs_dofs
+    graph_ = poisson_evaluation.graph
+    J = poisson_evaluation.J
 
     dFdu = ufl.derivative(F, uh)
     dJdu = ufl.derivative(J_form, uh)
@@ -254,7 +257,7 @@ def test_Poisson_dJdbc(poisson_problem):
     # Compare automatic differentiation result with explicit adjoint calculation on the dofs owned by the calling rank.
     assert domain.comm.allreduce(
         np.allclose(
-            graph_.backprop(id(J), id(uD_control)).array,
+            graph_.backprop(J, uD_control)[0].array,
             boundary_gradient.x.petsc_vec.array,
         ),
         op=MPI.LAND,

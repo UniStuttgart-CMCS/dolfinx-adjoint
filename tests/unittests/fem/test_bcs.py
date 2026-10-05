@@ -12,12 +12,13 @@ import dolfinx
 import numpy as np
 import pytest
 from basix.ufl import element, mixed_element
-from dolfinx import default_scalar_type, mesh
+from dolfinx import default_scalar_type, fem, mesh
 
-from dolfinx_adjoint import Graph, fem
+from dolfinx_adjoint import Graph
+from dolfinx_adjoint import fem as fem_ad
 
 
-def _distinct_function(V: fem.FunctionSpace, reverse: bool = False) -> fem.Function:
+def _distinct_function(V: fem.FunctionSpace, reverse: bool = False) -> fem_ad.Function:
     """A function on V whose entries are distinct over all of the ranks, addressed by the global index of their dof."""
     function = dolfinx.fem.Function(V)
     block_size = V.dofmap.index_map_bs
@@ -51,8 +52,8 @@ def test_gradient_of_a_function_value(
     dofs = fem.locate_dofs_topological(V, facet_dim, facets)
 
     # A value on the space it constrains is passed without the space itself.
-    g = fem.Function(V, name="g", graph=graph_)
-    bc = fem.dirichletbc(g, dofs, graph=graph_)
+    g = fem_ad.Function(V, name="g", graph=graph_)
+    bc = fem_ad.dirichletbc(g, dofs, graph=graph_)
 
     u = _distinct_function(V)
     v = _distinct_function(V, reverse=True)
@@ -61,11 +62,9 @@ def test_gradient_of_a_function_value(
     condition_of_v = dolfinx.fem.Function(V)
     dolfinx.fem.dirichletbc(v, dofs).set(condition_of_v.x.array)
 
-    edge = graph_.get_edge(graph_.get_node(id(g)), graph_.get_node(id(bc)))
-    edge.input_value = u.x.petsc_vec
-
+    edge = graph_.get_edge(graph_.get_node(g), graph_.get_node(bc))
     assert np.isclose(
-        edge.calculate_adjoint().dot(v.x.petsc_vec),
+        edge.calculate_adjoint(u.x.petsc_vec).dot(v.x.petsc_vec),
         u.x.petsc_vec.dot(condition_of_v.x.petsc_vec),
     )
 
@@ -87,8 +86,8 @@ def test_gradient_of_a_condition_on_two_dofs(unit_square_mesh: mesh.Mesh):
     # The two corners of the left boundary, which the condition is then built on.
     assert dofs.size == 2
 
-    g = fem.Function(V, name="g", graph=graph_)
-    bc = fem.dirichletbc(g, dofs, graph=graph_)
+    g = fem_ad.Function(V, name="g", graph=graph_)
+    bc = fem_ad.dirichletbc(g, dofs, graph=graph_)
 
     u = _distinct_function(V)
     v = _distinct_function(V, reverse=True)
@@ -97,11 +96,9 @@ def test_gradient_of_a_condition_on_two_dofs(unit_square_mesh: mesh.Mesh):
     condition_of_v = dolfinx.fem.Function(V)
     dolfinx.fem.dirichletbc(v, dofs).set(condition_of_v.x.array)
 
-    edge = graph_.get_edge(graph_.get_node(id(g)), graph_.get_node(id(bc)))
-    edge.input_value = u.x.petsc_vec
-
+    edge = graph_.get_edge(graph_.get_node(g), graph_.get_node(bc))
     assert np.isclose(
-        edge.calculate_adjoint().dot(v.x.petsc_vec),
+        edge.calculate_adjoint(u.x.petsc_vec).dot(v.x.petsc_vec),
         u.x.petsc_vec.dot(condition_of_v.x.petsc_vec),
     )
 
@@ -127,8 +124,8 @@ def test_gradient_of_a_value_on_a_collapsed_space(
     dofs = fem.locate_dofs_topological((V.sub(sub_space), V_sub), facet_dim, facets)
 
     # A value on a different space than the one it constrains is passed with it.
-    g = fem.Function(V_sub, name="g", graph=graph_)
-    bc = fem.dirichletbc(g, dofs, V.sub(sub_space), graph=graph_)
+    g = fem_ad.Function(V_sub, name="g", graph=graph_)
+    bc = fem_ad.dirichletbc(g, dofs, V.sub(sub_space), graph=graph_)
 
     u = _distinct_function(V)
     v = _distinct_function(V_sub, reverse=True)
@@ -137,11 +134,9 @@ def test_gradient_of_a_value_on_a_collapsed_space(
     condition_of_v = dolfinx.fem.Function(V)
     dolfinx.fem.dirichletbc(v, dofs, V.sub(sub_space)).set(condition_of_v.x.array)
 
-    edge = graph_.get_edge(graph_.get_node(id(g)), graph_.get_node(id(bc)))
-    edge.input_value = u.x.petsc_vec
-
+    edge = graph_.get_edge(graph_.get_node(g), graph_.get_node(bc))
     assert np.isclose(
-        edge.calculate_adjoint().dot(v.x.petsc_vec),
+        edge.calculate_adjoint(u.x.petsc_vec).dot(v.x.petsc_vec),
         u.x.petsc_vec.dot(condition_of_v.x.petsc_vec),
     )
 
@@ -166,8 +161,8 @@ def test_gradient_of_a_constant_value(
     dofs = fem.locate_dofs_topological(V, facet_dim, facets)
 
     # A constant is broadcast onto the space it constrains, which it is passed with.
-    c = fem.Constant(domain, value, name="c", graph=graph_)
-    bc = fem.dirichletbc(c, dofs, V, graph=graph_)
+    c = fem_ad.Constant(domain, value, name="c", graph=graph_)
+    bc = fem_ad.dirichletbc(c, dofs, V, graph=graph_)
 
     u = _distinct_function(V)
 
@@ -182,10 +177,8 @@ def test_gradient_of_a_constant_value(
         direction_bc.set(condition_of_direction.x.array)
         expected[component] = u.x.petsc_vec.dot(condition_of_direction.x.petsc_vec)
 
-    edge = graph_.get_edge(graph_.get_node(id(c)), graph_.get_node(id(bc)))
-    edge.input_value = u.x.petsc_vec
-
-    gradient = edge.calculate_adjoint()
+    edge = graph_.get_edge(graph_.get_node(c), graph_.get_node(bc))
+    gradient = edge.calculate_adjoint(u.x.petsc_vec)
 
     if value.ndim == 0:
         assert np.isscalar(gradient) and np.isclose(gradient, expected)

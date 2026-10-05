@@ -1,9 +1,10 @@
 import numpy as np
 from basix.ufl import real_element
 from dolfinx import fem
+from petsc4py import PETSc
 
 import dolfinx_adjoint.graph as graph
-from dolfinx_adjoint.utils import bind_arguments
+from dolfinx_adjoint.fem._recording import bind_arguments
 
 
 def dirichletbc(*args, **kwargs):
@@ -35,7 +36,7 @@ def dirichletbc(*args, **kwargs):
     arguments = bind_arguments(fem.dirichletbc, *args, **kwargs)
     value = arguments["value"]
 
-    value_node = _graph.get_node(id(value))
+    value_node = _graph.get_node(value)
     if value_node is None:
         return output
 
@@ -69,8 +70,7 @@ def dirichletbc(*args, **kwargs):
             value_node, dirichletbc_node, ctx=ctx
         )
 
-    dirichletbc_edge.set_next_functions(value_node.get_gradFuncs())
-    dirichletbc_node.set_gradFuncs([dirichletbc_edge])
+    dirichletbc_node.grad_fns = [dirichletbc_edge]
     _graph.add_edge(dirichletbc_edge)
 
     return output
@@ -82,7 +82,7 @@ class DirichletBC_Function_Edge(graph.Edge):
 
     """
 
-    def calculate_adjoint(self):
+    def calculate_adjoint(self, value: PETSc.Vec):
         """
         The method provides the adjoint equation for the derivative of the DirichletBC to the function defining the value of the BC.
 
@@ -98,7 +98,7 @@ class DirichletBC_Function_Edge(graph.Edge):
         # Extract variables from contextvariable ctx
         dofs, value_dofs, template = self.ctx
 
-        values = self.input_value.array_r
+        values = value.array_r
         gradient = template.duplicate()
         gradient.zeroEntries()
         gradient.array_w[value_dofs] = values[dofs]
@@ -112,7 +112,7 @@ class DirichletBC_Constant_Edge(graph.Edge):
 
     """
 
-    def calculate_adjoint(self):
+    def calculate_adjoint(self, value: PETSc.Vec):
         """
         The method provides the adjoint equation for the derivative of the DirichletBC to the constant defining the value of the BC.
 
@@ -126,9 +126,7 @@ class DirichletBC_Constant_Edge(graph.Edge):
 
         owned_boundary_dofs, constant, interpolation, input_cache = self.ctx
         input_cache.zeroEntries()
-        input_cache.array_w[owned_boundary_dofs] = self.input_value.array_r[
-            owned_boundary_dofs
-        ]
+        input_cache.array_w[owned_boundary_dofs] = value.array_r[owned_boundary_dofs]
         gradient = interpolation.createVecRight()
         interpolation.multTranspose(input_cache, gradient)
 

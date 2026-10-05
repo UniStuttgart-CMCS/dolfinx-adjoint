@@ -1,9 +1,9 @@
 import numpy as np
 from dolfinx import fem, la
 
-import dolfinx_adjoint.graph as graph
-from dolfinx_adjoint.fem._recording import bind_arguments
-from dolfinx_adjoint.graph import Node
+import dolfinx_graph_ad.graph as graph
+from dolfinx_graph_ad.fem._recording import bind_arguments
+from dolfinx_graph_ad.graph import Node
 
 
 class FunctionNode(Node):

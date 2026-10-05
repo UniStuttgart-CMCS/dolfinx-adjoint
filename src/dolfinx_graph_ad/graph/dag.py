@@ -9,9 +9,9 @@ from dolfinx import fem
 from dolfinx.mesh import Mesh
 from networkx import DiGraph
 
-from dolfinx_adjoint.graph.dolfinx_helpers import add
-from dolfinx_adjoint.graph.edge import Edge
-from dolfinx_adjoint.graph.node import AbstractNode, Node
+from dolfinx_graph_ad.graph.dolfinx_helpers import add
+from dolfinx_graph_ad.graph.edge import Edge
+from dolfinx_graph_ad.graph.node import AbstractNode, Node
 
 
 class Graph:
@@ -84,7 +84,7 @@ class Graph:
         Note:
             Saving preserves owned and ghost entries locally.
         """
-        from dolfinx_adjoint.fem.function import ConstantNode, FunctionNode
+        from dolfinx_graph_ad.fem.function import ConstantNode, FunctionNode
 
         node = self.get_node(value)
         if node is not None:

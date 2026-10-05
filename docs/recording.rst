@@ -9,7 +9,7 @@ other, so that every call shows whether it is recorded:
 .. code-block:: python
 
    from dolfinx import fem
-   from dolfinx_adjoint import fem as fem_ad
+   from dolfinx_graph_ad import fem as fem_ad
 
    V = fem.functionspace(domain, ("Lagrange", 1))  # DOLFINx, not recorded
    u = fem_ad.Function(V, graph=graph_)  # recorded

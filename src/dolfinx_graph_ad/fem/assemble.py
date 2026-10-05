@@ -1,7 +1,7 @@
 from dolfinx import fem
 
-import dolfinx_adjoint.graph as graph
-from dolfinx_adjoint.fem._recording import bind_arguments
+import dolfinx_graph_ad.graph as graph
+from dolfinx_graph_ad.fem._recording import bind_arguments
 
 
 def assemble_scalar(*args, **kwargs):

@@ -10,12 +10,12 @@ from dolfinx.fem.petsc import NonlinearProblem as NonlinearProblemBase
 from dolfinx.fem.petsc import assign, set_bc
 from petsc4py import PETSc
 
-import dolfinx_adjoint.graph as graph
-from dolfinx_adjoint.fem import _calculus as ad
-from dolfinx_adjoint.fem._recording import bind_arguments
-from dolfinx_adjoint.fem.bcs import DirichletBCNode
-from dolfinx_adjoint.fem.function import FunctionNode
-from dolfinx_adjoint.graph.dolfinx_helpers import resolve_capture, scalar, zeros
+import dolfinx_graph_ad.graph as graph
+from dolfinx_graph_ad.fem import _calculus as ad
+from dolfinx_graph_ad.fem._recording import bind_arguments
+from dolfinx_graph_ad.fem.bcs import DirichletBCNode
+from dolfinx_graph_ad.fem.function import FunctionNode
+from dolfinx_graph_ad.graph.dolfinx_helpers import resolve_capture, scalar, zeros
 
 
 class LinearProblem(LinearProblemBase):
@@ -230,7 +230,7 @@ class ProblemNode(graph.AbstractNode):
             forms: Symbolic forms defining the forward problem.
             options: The ``adjoint_petsc_options`` and ``adjoint_petsc_options_prefix``
                 the constructor was given for the derivative equations.
-            **kwargs: Arguments of :py:class:`dolfinx_adjoint.graph.AbstractNode`.
+            **kwargs: Arguments of :py:class:`dolfinx_graph_ad.graph.AbstractNode`.
         """
 
         super().__init__(object, **kwargs)
@@ -592,7 +592,7 @@ class AdjointProblem(LinearProblemBase):
             bcs: Boundary conditions whose constrained entries are set to zero.
             petsc_options: Options configuring the adjoint KSP.
             petsc_options_prefix: Solver options prefix, defaulting to
-                ``dolfinx_adjoint_``.
+                ``dolfinx_graph_ad_``.
             kwargs: The arguments of :py:class:`dolfinx.fem.petsc.LinearProblem` the
                 forms of the adjoint equation are compiled with, which are the ones the
                 problem it belongs to was set up with.
@@ -603,7 +603,7 @@ class AdjointProblem(LinearProblemBase):
         """
 
         if petsc_options_prefix is None:
-            petsc_options_prefix = "dolfinx_adjoint_"
+            petsc_options_prefix = "dolfinx_graph_ad_"
 
         # The zero form supplies the vector layout without an unused RHS kernel.
         super().__init__(

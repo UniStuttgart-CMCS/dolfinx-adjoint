@@ -6,7 +6,7 @@ from dolfinx import fem
 from petsc4py import PETSc
 from ufl.algorithms import expand_derivatives
 
-from dolfinx_adjoint.graph.dolfinx_helpers import constant_mesh
+from dolfinx_graph_ad.graph.dolfinx_helpers import constant_mesh
 
 
 def real_space(constant: ufl.Constant) -> fem.FunctionSpace:

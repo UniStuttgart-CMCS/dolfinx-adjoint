@@ -4,8 +4,8 @@ import pytest
 import ufl
 from dolfinx import fem
 
-from dolfinx_adjoint import Graph
-from dolfinx_adjoint import fem as fem_ad
+from dolfinx_graph_ad import Graph
+from dolfinx_graph_ad import fem as fem_ad
 
 
 @pytest.mark.parametrize("versions", [(None, None), (3, None), (3, 7)])

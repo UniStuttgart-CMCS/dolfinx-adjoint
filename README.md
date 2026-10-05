@@ -1,7 +1,7 @@
-# DOLFINx-ADJOINT
+# DOLFINx-GraphAD
 
-[![CI](https://github.com/unistuttgart-cmcs/dolfinx-adjoint/actions/workflows/ci.yml/badge.svg)](https://github.com/unistuttgart-cmcs/dolfinx-adjoint/actions/workflows/ci.yml)
-[![Docs](https://github.com/unistuttgart-cmcs/dolfinx-adjoint/actions/workflows/docs-publish.yml/badge.svg)](https://unistuttgart-cmcs.github.io/dolfinx-adjoint/)
+[![CI](https://github.com/unistuttgart-cmcs/dolfinx-graph-ad/actions/workflows/ci.yml/badge.svg)](https://github.com/unistuttgart-cmcs/dolfinx-graph-ad/actions/workflows/ci.yml)
+[![Docs](https://github.com/unistuttgart-cmcs/dolfinx-graph-ad/actions/workflows/docs-publish.yml/badge.svg)](https://unistuttgart-cmcs.github.io/dolfinx-graph-ad/)
 ![Latest supported DOLFINx: 0.11.0](https://img.shields.io/badge/DOLFINx%20latest%20supported-0.11.0-orange)
 
 Automatic differentiation for [DOLFINx](https://github.com/FEniCS/dolfinx) using the adjoint method.
@@ -9,13 +9,13 @@ Efficient sensitivity analysis and gradient-based optimization for finite elemen
 
 ## Documentation
 
-Full documentation is available at [unistuttgart-cmcs.github.io/dolfinx-adjoint](https://unistuttgart-cmcs.github.io/dolfinx-adjoint/).
+Full documentation is available at [unistuttgart-cmcs.github.io/dolfinx-graph-ad](https://unistuttgart-cmcs.github.io/dolfinx-graph-ad/).
 
 ## Installation
 
 ```bash
-git clone https://github.com/unistuttgart-cmcs/dolfinx-adjoint.git
-cd dolfinx-adjoint
+git clone https://github.com/unistuttgart-cmcs/dolfinx-graph-ad.git
+cd dolfinx-graph-ad
 pip install -e .
 ```
 
@@ -33,8 +33,8 @@ For demos and tests, use `pip install -e ".[all]"`.
 Compute dJ/df for a Poisson problem:
 
 ```python
-from dolfinx_adjoint import Graph
-from dolfinx_adjoint import fem as fem_ad
+from dolfinx_graph_ad import Graph
+from dolfinx_graph_ad import fem as fem_ad
 
 graph_ = Graph()
 
@@ -52,7 +52,7 @@ J = fem_ad.assemble_scalar(fem_ad.form(J_form, graph=graph_), graph=graph_)
 ```
 
 A graph records a single forward evaluation: record a new graph for every new control value. 
-See [Recording operations](https://unistuttgart-cmcs.github.io/dolfinx-adjoint/recording.html#recording-operations) for details.
+See [Recording operations](https://unistuttgart-cmcs.github.io/dolfinx-graph-ad/recording.html#recording-operations) for details.
 
 `backprop` accepts recorded objects or exact nodes, and always returns a tuple when
 controls are requested. For example, `graph_.backprop(J, [f, nu])` selects the latest
@@ -61,7 +61,7 @@ recorded version.
 
 Multiple outputs produce one gradient of their weighted sum per requested control,
 following the vector–Jacobian product semantics of PyTorch's `autograd.grad`. 
-See [Multiple Objectives and Controls](https://unistuttgart-cmcs.github.io/dolfinx-adjoint/differentiation.html#multiple-objectives-and-controls)
+See [Multiple Objectives and Controls](https://unistuttgart-cmcs.github.io/dolfinx-graph-ad/differentiation.html#multiple-objectives-and-controls)
 for details on multiple objectives and controls.
 
 ## Demos

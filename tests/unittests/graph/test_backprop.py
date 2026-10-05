@@ -4,8 +4,8 @@ import numpy as np
 import pytest
 from petsc4py import PETSc
 
-import dolfinx_adjoint.graph as graph
-from dolfinx_adjoint.graph import Edge, Node
+import dolfinx_graph_ad.graph as graph
+from dolfinx_graph_ad.graph import Edge, Node
 
 
 class ScaledEdge(Edge):

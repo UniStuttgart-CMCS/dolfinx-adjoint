@@ -7,7 +7,7 @@ Installation
 ------------
 
 Follow the installation instructions in the
-`project README <https://github.com/unistuttgart-cmcs/dolfinx-adjoint#installation>`_,
+`project README <https://github.com/unistuttgart-cmcs/dolfinx-graph-ad#installation>`_,
 including the prerequisites and optional dependencies for demos and tests.
 
 Record a forward solve
@@ -25,8 +25,8 @@ Compute :math:`dJ/df` by recording both the problem constructor and its solve:
 
    import ufl
 
-   from dolfinx_adjoint import Graph
-   from dolfinx_adjoint import fem as fem_ad
+   from dolfinx_graph_ad import Graph
+   from dolfinx_graph_ad import fem as fem_ad
 
    graph_ = Graph()
 

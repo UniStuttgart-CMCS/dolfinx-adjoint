@@ -7,10 +7,10 @@ from mpi4py import MPI
 from petsc4py import PETSc
 from petsc4py.PETSc import ScalarType
 
-from dolfinx_adjoint import Graph
-from dolfinx_adjoint import fem as fem_ad
-from dolfinx_adjoint.fem.petsc import AdjointProblem
-from dolfinx_adjoint.graph import Edge
+from dolfinx_graph_ad import Graph
+from dolfinx_graph_ad import fem as fem_ad
+from dolfinx_graph_ad.fem.petsc import AdjointProblem
+from dolfinx_graph_ad.graph import Edge
 
 
 @pytest.fixture(params=["coefficient", "constant", "boundary"])

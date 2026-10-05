@@ -2,10 +2,10 @@ import numpy as np
 from dolfinx import fem
 from petsc4py import PETSc
 
-import dolfinx_adjoint.graph as graph
-from dolfinx_adjoint.fem._calculus import real_space
-from dolfinx_adjoint.fem._recording import bind_arguments
-from dolfinx_adjoint.graph.dolfinx_helpers import scalar, zeros
+import dolfinx_graph_ad.graph as graph
+from dolfinx_graph_ad.fem._calculus import real_space
+from dolfinx_graph_ad.fem._recording import bind_arguments
+from dolfinx_graph_ad.graph.dolfinx_helpers import scalar, zeros
 
 
 def dirichletbc(*args, **kwargs):

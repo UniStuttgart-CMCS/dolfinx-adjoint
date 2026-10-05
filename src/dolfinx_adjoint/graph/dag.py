@@ -4,6 +4,7 @@ from collections.abc import Sequence, ValuesView
 from typing import Any, Callable
 
 import networkx as nx
+from dolfinx import fem
 from dolfinx.mesh import Mesh
 from networkx import DiGraph
 
@@ -65,6 +66,31 @@ class Graph:
             ValuesView: A live view of all edges. Add edges with :py:meth:`add_edge`.
         """
         return self._edges.values()
+
+    def track(self, value) -> Node:
+        """Register an existing Function or Constant as a control at its current value.
+
+        Args:
+            value: A DOLFINx Function or Constant owned by the caller.
+
+        Returns:
+            Node: The control node. A value that is already recorded in this
+            graph returns its latest node unchanged.
+
+        Raises:
+            TypeError: If the value is not a DOLFINx Function or Constant.
+
+        Note:
+            Registering is local to every rank and does not communicate.
+        """
+        node = self.get_node(value)
+        if node is not None:
+            return node
+        if not isinstance(value, (fem.Function, fem.Constant)):
+            raise TypeError("Controls must be DOLFINx Functions or Constants.")
+        node = Node(value, name=getattr(value, "name", "control"))
+        self.add_node(node)
+        return node
 
     def add_node(self, node: Node):
         """Add a node to the graph

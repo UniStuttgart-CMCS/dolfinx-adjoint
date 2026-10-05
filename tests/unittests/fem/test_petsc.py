@@ -228,8 +228,9 @@ def test_problem_edges_compile_the_adjoint_with_the_recorded_arguments(
     graph_ = Graph()
 
     V = fem.functionspace(unit_square_mesh, ("Lagrange", 1))
-    f = fem_ad.Function(V, name="f", graph=graph_)
+    f = fem_ad.Function(V, name="f")
     f.x.array[:] = 1.0
+    graph_.track(f)
 
     W = fem.functionspace(submesh, ("Lagrange", 1))
     uh = fem_ad.Function(W, name="uh", graph=graph_)

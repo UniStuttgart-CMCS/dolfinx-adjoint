@@ -58,7 +58,7 @@ recorded version.
 
 Multiple outputs produce one gradient of their weighted sum per requested control,
 following the vector–Jacobian product semantics of PyTorch's `autograd.grad`. 
-See [Multiple Objectives and Controls](docs/index.rst#multiple-objectives-and-controls)
+See [Multiple Objectives and Controls](docs/differentiation.rst#multiple-objectives-and-controls)
 for details on multiple objectives and controls.
 
 ## Demos

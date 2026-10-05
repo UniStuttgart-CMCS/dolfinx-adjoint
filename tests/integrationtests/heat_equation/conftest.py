@@ -99,7 +99,7 @@ class HeatEquationProblem:
 
         """
 
-        initial = fem_ad.Function(self.V, name="initial_guess", graph=graph)
+        initial = fem_ad.Function(self.V, name="initial_guess")
         if initial_guess is None:
             initial.interpolate(
                 lambda x: 15.0 * x[0] * (1.0 - x[0]) * x[1] * (1.0 - x[1])
@@ -107,6 +107,8 @@ class HeatEquationProblem:
         else:
             initial_guess.x.petsc_vec.copy(initial.x.petsc_vec)
         initial.x.scatter_forward()
+        if graph is not None:
+            graph.track(initial)
 
         u_prev = initial.copy(graph=graph, name="u_prev")
         u_next = fem_ad.Function(self.V, name="u_next", graph=graph)

@@ -57,9 +57,10 @@ def test_form_constant_gradient_on_measures(
     measure = ufl.Measure(measure_name, domain=domain)
 
     V = fem.functionspace(domain, ("Lagrange", 1))
-    u = fem_ad.Function(V, graph=graph_)
+    u = fem_ad.Function(V)
     u.interpolate(lambda x: 1.0 + x[0])
     u.x.scatter_forward()
+    graph_.track(u)
     weight = ufl.avg(u) if measure_name == "dS" else u
     weighted_measure = domain.comm.allreduce(
         fem_ad.assemble_scalar(fem_ad.form(weight * measure)), op=MPI.SUM
@@ -124,8 +125,9 @@ def test_form_edges_compile_the_derivative_with_the_recorded_arguments(
     graph_ = Graph()
 
     V = fem.functionspace(unit_square_mesh, ("Lagrange", 1))
-    f = fem_ad.Function(V, graph=graph_)
+    f = fem_ad.Function(V)
     f.x.array[:] = 3.0
+    graph_.track(f)
     c = fem_ad.Constant(
         unit_square_mesh, np.asarray((3.0,), dtype=ScalarType), graph=graph_
     )

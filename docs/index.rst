@@ -1,10 +1,9 @@
 DOLFINx-ADJOINT
-================
+===============
 
-Automatic differentiation for `DOLFINx <https://github.com/FEniCS/dolfinx>`_ using the adjoint method.
-Efficient sensitivity analysis and gradient-based optimization for finite element simulations.
-
-----
+Automatic differentiation for `DOLFINx <https://github.com/FEniCS/dolfinx>`_
+using the adjoint method. Compute sensitivities and optimize finite element
+simulations with an explicit computational graph that you own.
 
 Key Features
 ------------
@@ -39,152 +38,12 @@ Key Features
 
       Drop-in replacements for DOLFINx objects -- just add a ``graph`` argument.
 
-----
+Start with :ref:`getting-started` or explore a complete notebook in :ref:`demos`.
 
-How It Works
-------------
+Featured demos
+--------------
 
-.. grid:: 3
-   :gutter: 3
-
-   .. grid-item-card:: 1. Build the graph
-
-      Create a ``Graph`` object and pass it to DOLFINx operations.
-      The graph automatically records every Function, Constant,
-      and boundary condition.
-
-   .. grid-item-card:: 2. Solve forward
-
-      Run your simulation as usual. Solvers, forms, and assemblies
-      are recorded as edges connecting the nodes in the graph.
-
-   .. grid-item-card:: 3. Backpropagate
-
-      Call ``graph.backprop(J, [x, ...])`` to compute the gradients of any
-      quantity *J* with respect to any parameters *x*, in a single pass.
-
-The computational graph is a directed acyclic graph (DAG) where:
-
-- **Nodes** represent DOLFINx objects (Functions, Constants, boundary conditions, solver states)
-- **Edges** represent operations and store the corresponding adjoint equations
-
-During backpropagation, edges compute derivatives using UFL automatic differentiation
-for forms and implicit differentiation for PDE solves:
-
-.. math::
-
-   \frac{du}{df} = -\left(\frac{\partial F}{\partial u}\right)^{-1} \frac{\partial F}{\partial f}
-
-----
-
-Supported Operations
---------------------
-
-The following DOLFINx objects and functions have drop-in replacements that record
-operations on the computational graph:
-
-.. list-table::
-   :header-rows: 1
-   :widths: 35 65
-
-   * - DOLFINx object
-     - Adjoint capability
-   * - ``fem.Function``
-     - Graph-tracked initialization, ``copy()``, and ``assign()``
-   * - ``fem.Constant``
-     - Graph-tracked constants with adjoint support
-   * - ``fem.form``
-     - UFL differentiation w.r.t. coefficients and constants
-   * - ``fem.assemble_scalar``
-     - Tracked scalar assembly for objective functions
-   * - ``fem.dirichletbc``
-     - Boundary condition adjoint via DOF restriction
-   * - ``fem.petsc.LinearProblem``
-     - Implicit adjoint solve for linear systems
-   * - ``fem.petsc.NonlinearProblem``
-     - Implicit adjoint solve for nonlinear systems
-
-All overloaded objects accept an optional ``graph=`` keyword argument. When omitted,
-they behave identically to their DOLFINx counterparts.
-
-----
-
-Quick Start
------------
-
-**Install**
-
-.. code-block:: bash
-
-   git clone https://github.com/unistuttgart-cmcs/dolfinx-adjoint.git
-   cd dolfinx-adjoint && pip install -e .
-
-Requires Python >= 3.12 and `DOLFINx <https://github.com/FEniCS/dolfinx>`_ >= 0.10.0.
-CI targets DOLFINx 0.11.0. Compatibility with the declared minimum, 0.10.0,
-is not currently checked in CI.
-
-For demos and tests, use ``pip install -e ".[all]"``.
-
-**Usage** -- compute dJ/df for a Poisson problem:
-
-.. code-block:: python
-
-   from dolfinx_adjoint import Graph
-   from dolfinx_adjoint import fem as fem_ad
-
-   graph_ = Graph()
-
-   # Set up your DOLFINx problem, passing graph= to track operations
-   f  = fem_ad.Function(W, name="f", graph=graph_)
-   uh = fem_ad.Function(V, name="u", graph=graph_)
-
-   problem = fem_ad.petsc.LinearProblem(a, L, u=uh, bcs=bcs, graph=graph_)
-   problem.solve(graph=graph_)
-
-   J = fem_ad.assemble_scalar(fem_ad.form(J_form, graph=graph_), graph=graph_)
-
-   # Compute the gradient
-   (dJdf,) = graph_.backprop(J, f)
-
-----
-
-.. _multiple-objectives-and-controls:
-
-Multiple Objectives and Controls
---------------------------------
-
-``Graph.backprop`` returns one gradient per requested control, in control order.
-Multiple outputs are differentiated together as a weighted vector–Jacobian product,
-like ``torch.autograd.grad``. For scalar objectives :math:`J_j` and seeds
-:math:`s_j`, the returned gradient for control :math:`m_i` is
-
-.. math::
-
-   g_i = \sum_j s_j \frac{\partial J_j}{\partial m_i}.
-
-A single seed applies to every output; the default ``1.0`` differentiates the sum of
-scalar objectives. Alternatively, supply a seed sequence of the same length and order
-as the outputs.
-
-For two recorded scalar objectives and three recorded controls:
-
-.. code-block:: python
-
-   controls = (m1, m2, m3)
-   summed = graph_.backprop((J1, J2), controls)  # three gradients of J1 + J2
-   weighted = graph_.backprop((J1, J2), controls, grad_outputs=(1.0, 0.5))
-
-To obtain each objective's gradients separately, request all controls in one call per
-objective, using the same graph.
-
-----
-
-Demos
------
-
-Jupyter notebook examples in the ``demos/`` directory:
-
-.. grid:: 2
+.. grid:: 1 1 2 2
    :gutter: 3
 
    .. grid-item-card:: :octicon:`beaker` Poisson Equation
@@ -201,25 +60,24 @@ Jupyter notebook examples in the ``demos/`` directory:
       adjoint backpropagation through multiple time steps to compute
       sensitivities w.r.t. the initial condition.
 
-   .. grid-item-card:: :octicon:`north-star` Linear Elasticity
-      :link: https://github.com/unistuttgart-cmcs/dolfinx-adjoint/blob/main/demos/linear_elasticity.ipynb
+See :ref:`all demos <demos>` for linear elasticity and Stokes flow, alongside these
+examples.
 
-      3D cantilever beam under gravity. Computes gradients of the deformation
-      energy w.r.t. the Lame parameters :math:`\lambda` and :math:`\mu`.
+.. toctree::
+   :maxdepth: 2
+   :caption: User guide
+   :hidden:
 
-   .. grid-item-card:: :octicon:`milestone` Stokes Flow
-      :link: https://github.com/unistuttgart-cmcs/dolfinx-adjoint/blob/main/demos/stokes.ipynb
+   getting-started
+   recording
+   solvers
+   differentiation
+   demos
 
-      Stokes flow around a cylindrical obstacle using P2-P1 Taylor-Hood
-      elements. Computes gradients of viscous dissipation w.r.t. the viscosity
-      and the obstacle boundary condition.
-
-----
+.. include:: api/dolfinx_adjoint.rst
 
 Acknowledgments
 ---------------
 
-This library builds upon the `FEniCS Project <https://fenicsproject.org/>`_ and uses
-`DOLFINx <https://github.com/FEniCS/dolfinx>`_ as its foundation.
-
-.. include:: api/dolfinx_adjoint.rst
+This library builds upon the `FEniCS Project <https://fenicsproject.org/>`_
+and uses DOLFINx as its foundation.

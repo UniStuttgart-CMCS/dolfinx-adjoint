@@ -30,7 +30,7 @@ Compute :math:`dJ/df` by recording both the problem constructor and its solve:
 
    graph_ = Graph()
 
-   # Set the control value, then register it with the graph.
+   # Set the control value before recording its initial snapshot.
    f = fem_ad.Function(W, name="f")
    f.x.array[:] = 1.0
    f.x.scatter_forward()

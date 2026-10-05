@@ -66,7 +66,7 @@ class Edge:
         """The edges into the predecessor node, which the propagation continues with."""
         return self.predecessor.grad_fns
 
-    def calculate_adjoint(self, value: Any):
+    def calculate_adjoint(self, value: Any) -> Any:
         """
         This method calculates the default adjoint equation for the edge, which
         corresponds to the derivative:
@@ -81,12 +81,14 @@ class Edge:
         The computed value only corresponds to the contribution of the current edge to the predecessor node. The total adjoint value of the predecessor node is the sum of all contributions from all edges into it.
 
         Args:
-            value (Any): The adjoint value of the successor node.
+            value (Any): The adjoint value of the successor node, or shared
+                operation data prepared by a downstream edge.
 
         Returns:
-            Any: The adjoint contribution to the predecessor node, a scalar or PETSc.Vec
-            of which only the entries owned by the calling rank have to be valid. None if
-            it vanishes.
+            Any: The adjoint contribution to the predecessor node. Edges between
+            operations may return shared adjoint data; edges into numerical nodes
+            return a scalar or PETSc.Vec gradient, of which only the entries owned by
+            the calling rank have to be valid. None if it vanishes.
 
         """
 

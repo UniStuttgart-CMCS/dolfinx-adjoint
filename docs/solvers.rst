@@ -20,3 +20,8 @@ The constructor also accepts a separate ``adjoint_petsc_options_prefix``, which
 defaults to the forward prefix followed by ``adjoint_``. Without options the adjoint
 solver keeps PETSc defaults; forward options and null spaces are never inherited. You
 assert its convergence, e.g. with ``"ksp_error_if_not_converged": True``.
+
+
+The first problem-node version owns the residual preparation and adjoint solver
+cache. Later versions share that cache while keeping each solve's captured values
+and dependencies separate. 

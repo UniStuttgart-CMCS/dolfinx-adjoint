@@ -49,3 +49,33 @@ operations on the computational graph:
      - Implicit adjoint solve for nonlinear systems
 
 See :ref:`derivative-solvers` for the options of the adjoint solvers.
+
+
+Saved values and versions
+-------------------------
+
+Each solve and scalar assembly differentiates at its saved inputs and records the
+latest versions it reads. A version is saved by the recorded call that creates it.
+Set a leaf control before ``graph.track(control)``; subsequent Function assignments
+must be recorded with ``graph=``. Raw array writes do not create versions and are
+not detected. Untracked values are read in place and must remain unchanged until
+differentiation finishes.
+
+An output Function need not be tracked before its first solve. Without a recorded
+initial value, the first solve produces version 0; otherwise it produces the next
+version. Later solves record subsequent versions automatically unless ``version=``
+is supplied explicitly. A linear problem whose forms read its own solution, such
+as a Picard step, depends on the value before the solve as a separate input.
+
+Boundary conditions follow DOLFINx's list order: at overlapping degrees of freedom,
+the last condition supplies the value and its derivative. Untracked conditions
+also overwrite earlier ones. Each solve retains its own precedence. Reverse
+contributions use owned entries and accumulate mapped ghost contributions to their
+owners. Native DOLFINx Constants can be registered with ``graph.track`` and passed
+to recorded forms, problems and boundary-condition constructors.
+
+Scalar assembly still returns the rank-local value. Keep that object for
+``backprop`` and reduce a separate value over the mesh communicator for reporting.
+Derivatives retain the forward quadrature degree when it is inferred without an
+explicit degree or supplied as a nonnegative degree. Explicit negative degrees
+remain a known limitation of the current quadrature preservation.

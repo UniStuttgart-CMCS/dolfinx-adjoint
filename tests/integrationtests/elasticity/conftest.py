@@ -82,7 +82,7 @@ class PlaneElasticityProblem:
         """
         uh = fem_ad.Function(self.V, name="u", graph=graph)
 
-        uD_control = fem_ad.Function(self.V, name="u_D", graph=graph)
+        uD_control = fem_ad.Function(self.V, name="u_D")
         if u_D is None:
             uD_control.interpolate(
                 lambda x: np.stack((0.5 + 0.0 * x[0], 0.25 + 0.0 * x[1]))
@@ -90,6 +90,8 @@ class PlaneElasticityProblem:
         else:
             u_D.x.petsc_vec.copy(uD_control.x.petsc_vec)
         uD_control.x.scatter_forward()
+        if graph is not None:
+            graph.track(uD_control)
 
         mu = fem_ad.Constant(self.domain, ScalarType(1.0), name="μ")
         lambda_ = fem_ad.Constant(self.domain, ScalarType(1.25), name="λ")

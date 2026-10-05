@@ -1,5 +1,3 @@
-from typing import Any
-
 from dolfinx import fem
 
 import dolfinx_adjoint.graph as graph
@@ -31,18 +29,26 @@ def assemble_scalar(*args, **kwargs):
 
     """
     _graph = kwargs.pop("graph", None)
-    output = fem.assemble_scalar(*args, **kwargs)
     if _graph is None:
-        return output
+        return fem.assemble_scalar(*args, **kwargs)
 
     M = bind_arguments(fem.assemble_scalar, *args, **kwargs)["M"]
 
+    # Get the node corresponding to the form
+    form_node = _graph.get_node(M).bind(_graph)
+    # The versions the form is assembled with, which its edges differentiate at.
+    ufl_form = form_node.ufl_form
+    form_node.values = {
+        value: _graph.capture(value)
+        for value in (*ufl_form.coefficients(), *ufl_form.constants())
+    }
+    output = fem.assemble_scalar(*args, **kwargs)
+
     # Creating and adding node to graph
-    assemble_node = AssembleScalarNode(output, M)
+    assemble_node = graph.Node(output, name="AssembleScalar")
     _graph.add_node(assemble_node)
 
     # Create edge between form and assemble
-    form_node = _graph.get_node(M)
 
     # The default edge is sufficient, since assembling a scalar does not require any additional operations
     # for the gradients
@@ -52,48 +58,3 @@ def assemble_scalar(*args, **kwargs):
     _graph.add_edge(assemble_edge)
 
     return output
-
-
-class AssembleScalarNode(graph.Node):
-    """
-    Node for the operation :py:func:`dolfinx.fem.assemble_scalar`.
-
-    In order to assemble the scalar value from the form in the forward pass,
-    the form needs to be saved in the node.
-
-    Attributes:
-        object (Any): The object that is being represented by the node
-        M (dolfinx.fem.Form): The form that is being assembled
-
-    """
-
-    def __init__(self, object: Any, M: fem.Form):
-        """
-        Constructor for the AssembleScalarNode
-
-        Args:
-            object (Any): The object that is being represented by the node
-            M (dolfinx.fem.Form): The form that is being assembled
-
-        """
-        super().__init__(object, name="AssembleScalar")
-        self.M = M
-
-    def release(self):
-        """
-        Releases the scalar, its data and gradient and the form it was assembled from.
-
-        """
-        super().release()
-        self.M = None
-
-    def __call__(self):
-        """
-        The call method to perform the assemble operation.
-
-        Returns:
-            float: The computed scalar on the local rank
-        """
-        output = fem.assemble_scalar(self.M)
-        self.object = output
-        return output

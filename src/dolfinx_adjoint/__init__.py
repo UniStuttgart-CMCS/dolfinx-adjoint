@@ -1,2 +1,2 @@
-from . import fem
-from .graph import AbstractNode, Edge, Graph, Node
+from dolfinx_adjoint import fem
+from dolfinx_adjoint.graph import AbstractNode, Edge, Graph, Node

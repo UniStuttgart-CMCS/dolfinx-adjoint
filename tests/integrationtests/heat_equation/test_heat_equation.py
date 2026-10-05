@@ -90,3 +90,59 @@ def test_Heat_initial(heat_equation_evaluation):
         ),
         op=MPI.LAND,
     )
+
+
+def test_Heat_conductivity(heat_equation_evaluation):
+    """Check the sum of the conductivity sensitivities of every time step.
+
+    Each term is ∫ s(u_i) ∇u_i·∇λ_i, with s(u) = 1 or 1 + u². Evaluating
+    every term at the final state gives a different gradient even for the
+    linear problem.
+    """
+    domain = heat_equation_evaluation.problem.domain
+    state_dependent = heat_equation_evaluation.problem.state_dependent
+    graph_ = heat_equation_evaluation.graph
+    J = heat_equation_evaluation.J
+    kappa = heat_equation_evaluation.conductivity
+    J_form = heat_equation_evaluation.J_form
+    u_next = heat_equation_evaluation.u_next
+    u_prev = heat_equation_evaluation.u_prev
+    F = heat_equation_evaluation.F
+    u_iterations = heat_equation_evaluation.u_iterations
+
+    rhs = ufl.derivative(J_form, u_next)
+    gradient = 0.0
+    for i in range(len(u_iterations) - 1, 0, -1):
+        F_i = ufl.replace(F, {u_next: u_iterations[i], u_prev: u_iterations[i - 1]})
+        dF_idu_i = ufl.derivative(F_i, u_iterations[i])
+
+        lambda_i = LinearProblem(
+            ufl.adjoint(dF_idu_i),
+            -rhs,
+            petsc_options_prefix="adjoint_",
+            petsc_options={
+                "ksp_type": "preonly",
+                "pc_type": "lu",
+                "pc_factor_mat_solver_type": "mumps",
+                "ksp_error_if_not_converged": True,
+            },
+        ).solve()
+
+        dF_idu_i_1 = ufl.derivative(F_i, u_iterations[i - 1])
+        rhs = ufl.action(ufl.adjoint(dF_idu_i_1), lambda_i)
+
+        conductivity_i = 1 + u_iterations[i] ** 2 if state_dependent else 1.0
+        gradient += domain.comm.allreduce(
+            fem.assemble_scalar(
+                fem.form(
+                    conductivity_i
+                    * ufl.inner(ufl.grad(u_iterations[i]), ufl.grad(lambda_i))
+                    * ufl.dx
+                )
+            ),
+            op=MPI.SUM,
+        )
+
+    # The gradient of a scalar Constant is summed over the ranks by the graph.
+    (result,) = graph_.backprop(J, kappa)
+    assert domain.comm.allreduce(np.isclose(result, gradient), op=MPI.LAND)

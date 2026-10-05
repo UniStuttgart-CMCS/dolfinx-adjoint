@@ -1,0 +1,21 @@
+{%- if '.' not in pkgname %}
+.. toctree::
+   :maxdepth: 2
+   :caption: API reference
+   :hidden:
+{% for docname in subpackages + submodules %}
+   /api/{{ docname }}
+{%- endfor %}
+{% else %}
+{% with qualname=pkgname -%}
+{% include "module.rst.jinja" %}
+{%- endwith %}
+
+{% if pkgname.count('.') == 1 %}
+.. toctree::
+   :maxdepth: 1
+   :glob:
+
+   {{ pkgname }}.*
+{% endif %}
+{% endif %}

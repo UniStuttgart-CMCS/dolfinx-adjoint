@@ -1,15 +1,17 @@
 import gc
 import os
+import weakref
 from collections.abc import Sequence, ValuesView
 from typing import Any, Callable
 
 import networkx as nx
+from dolfinx import fem
 from dolfinx.mesh import Mesh
 from networkx import DiGraph
 
-from .edge import Edge
-from .node import AbstractNode, Node
-from .values import add
+from dolfinx_adjoint.graph.dolfinx_helpers import add
+from dolfinx_adjoint.graph.edge import Edge
+from dolfinx_adjoint.graph.node import AbstractNode, Node
 
 
 class Graph:
@@ -65,6 +67,69 @@ class Graph:
             ValuesView: A live view of all edges. Add edges with :py:meth:`add_edge`.
         """
         return self._edges.values()
+
+    def track(self, value) -> Node:
+        """Register and save an existing Function or Constant at its current value.
+
+        Args:
+            value: A DOLFINx Function or Constant owned by the caller.
+
+        Returns:
+            Node: The control node. A value that is already recorded in this
+            graph returns its latest node unchanged.
+
+        Raises:
+            TypeError: If the value is not a DOLFINx Function or Constant.
+
+        Note:
+            Saving preserves owned and ghost entries locally.
+        """
+        from dolfinx_adjoint.fem.function import ConstantNode, FunctionNode
+
+        node = self.get_node(value)
+        if node is not None:
+            return node
+        if isinstance(value, fem.Function):
+            node = FunctionNode(value, name=getattr(value, "name", "control"))
+        elif isinstance(value, fem.Constant):
+            node = ConstantNode(value, name=getattr(value, "name", "control"))
+        else:
+            raise TypeError("Controls must be DOLFINx Functions or Constants.")
+        self.add_node(node)
+        self.save(node)
+        return node
+
+    def save(self, node: Node):
+        """Save a new version before any later recorded call overwrites it.
+
+        Args:
+            node: The Function or Constant version to save.
+
+        Note:
+            The saved copy includes owned and ghost entries. Every rank saves
+            and releases corresponding versions in the same order.
+        """
+        node.save()
+
+    def capture(self, value):
+        """Reference the exact version an operation reads, see :py:meth:`save`.
+
+        Args:
+            value: A Function or Constant, or an exact node owned by this graph.
+                Objects resolve to their latest recorded version; exact nodes
+                retain their version. Untracked values remain constant for this
+                graph and are neither registered nor copied.
+
+        Returns:
+            A weak reference to the node, whose snapshot holds its saved value,
+            or the value itself when it is untracked.
+        """
+        node = self.get_node(value)
+        if node is None:
+            return value
+        # A solve captures its own solution; a strong reference would close a cycle
+        # through its problem's adjoint context.
+        return weakref.ref(node)
 
     def add_node(self, node: Node):
         """Add a node to the graph
@@ -564,14 +629,6 @@ class Graph:
             edge.release()
         for node in self.nodes:
             node.release()
-
-    def recalculate(self):
-        """
-        Recalculate the graph
-
-        """
-        for node in self.nodes:
-            node()
 
     def __del__(self):
         """

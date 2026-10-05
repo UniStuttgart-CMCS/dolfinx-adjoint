@@ -127,7 +127,7 @@ class PoissonProblem:
 
         """
         uh = fem_ad.Function(self.V, name="uₕ", graph=graph)
-        forcing = fem_ad.Function(self.W, name="f", graph=graph)
+        forcing = fem_ad.Function(self.W, name="f")
 
         if f is None:
             forcing.interpolate(lambda x: x[0] + x[1])
@@ -137,12 +137,15 @@ class PoissonProblem:
 
         diffusion = fem_ad.Constant(self.domain, ScalarType(nu), name="ν", graph=graph)
 
-        boundary_value = fem_ad.Function(self.V, name="u_D", graph=graph)
+        boundary_value = fem_ad.Function(self.V, name="u_D")
         if u_D is None:
             boundary_value.x.array[:] = 1.0
         else:
             u_D.x.petsc_vec.copy(boundary_value.x.petsc_vec)
         boundary_value.x.scatter_forward()
+        if graph is not None:
+            graph.track(forcing)
+            graph.track(boundary_value)
 
         u = ufl.TrialFunction(self.V)
         v = ufl.TestFunction(self.V)

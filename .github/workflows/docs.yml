@@ -21,7 +21,7 @@ jobs:
 
       - name: Build documentation
         run: |
-          sphinx-apidoc -o docs/api src/dolfinx_adjoint --force --module-first --separate
+          sphinx-apidoc -o docs/api src/dolfinx_adjoint --force --separate --no-toc --templatedir docs/_templates/apidoc
           sphinx-build -W --keep-going -b html docs docs/_build/html
 
       - name: Upload Pages artifact

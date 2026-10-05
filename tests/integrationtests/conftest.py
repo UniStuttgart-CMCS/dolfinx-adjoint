@@ -22,3 +22,9 @@ def unit_square_mesh() -> mesh.Mesh:
 )
 def solver(request):
     return request.param
+
+
+@pytest.fixture(scope="module")
+def unit_interval_mesh() -> mesh.Mesh:
+    """Create a unit-interval mesh with 12 cells per test module."""
+    return mesh.create_unit_interval(MPI.COMM_WORLD, 12)

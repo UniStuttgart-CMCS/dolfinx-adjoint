@@ -1,7 +1,37 @@
+import numpy as np
 from dolfinx import fem, la
 
 import dolfinx_adjoint.graph as graph
 from dolfinx_adjoint.fem._recording import bind_arguments
+from dolfinx_adjoint.graph import Node
+
+
+class FunctionNode(Node):
+    """A Function version, with derivatives in its distributed vector layout."""
+
+    def save(self):
+        """Copy this version's values once, before a later recorded call overwrites them.
+
+        The copy includes the ghost entries and shares the scatterer of the original, so
+        creating it does not communicate.
+        """
+        if self._snapshot is None:
+            self._snapshot = fem.Function.copy(self.object)
+
+
+class ConstantNode(Node):
+    """A Constant version with its saved value."""
+
+    def save(self):
+        """Copy this version's value once, before a later recorded call overwrites it.
+
+        The copy is local to the calling rank.
+        """
+        if self._snapshot is None:
+            value = self.object
+            self._snapshot = fem.Constant(
+                value.ufl_domain(), np.array(value.value, copy=True)
+            )
 
 
 class Function(fem.Function):
@@ -41,8 +71,9 @@ class Function(fem.Function):
             return
 
         self.map = map
-        function_node = graph.Node(self, name=self.name)
+        function_node = FunctionNode(self, name=self.name)
         _graph.add_node(function_node)
+        _graph.save(function_node)
 
     def copy(self, **kwargs):
         """Creates a new dolfinx.fem.Function with the same function space and a copy of the PETsc vector.
@@ -66,8 +97,9 @@ class Function(fem.Function):
         if _graph is None:
             return result
 
-        function_node = graph.Node(result, name=result.name)
+        function_node = FunctionNode(result, name=result.name)
         _graph.add_node(function_node)
+        _graph.save(function_node)
 
         copied_node = _graph.get_node(self)
         copy_edge = graph.Edge(copied_node, function_node)
@@ -82,7 +114,7 @@ class Function(fem.Function):
 
         Args:
             function (dolfinx.fem.Function): The function to assign values from.
-            graph (graph, optional): An additional keyword argument to specifier whether the assemble
+            graph (graph, optional): An additional keyword argument to specify whether the
                 operation should be added to the graph. If not present, the original functionality
                 of dolfinx is used without any additional functionalities.
             version (int, optional): The recorded version of the target. Defaults to
@@ -93,20 +125,20 @@ class Function(fem.Function):
             subsequent operations depend on.
 
         """
-        self.x.array[:] = function.x.array[:]
-
         _graph = kwargs.pop("graph", None)
         version = kwargs.pop("version", None)
+        if _graph is not None:
+            function_node = _graph.get_node(function)
+        self.x.array[:] = function.x.array[:]
         if _graph is None:
             return
 
-        function_node = _graph.get_node(function)
         if version is None:
             previous = _graph.get_node(self)
             version = 0 if previous is None else previous.version + 1
-
-        assign_node = graph.Node(self, name=self.name, version=version)
+        assign_node = FunctionNode(self, name=self.name, version=version)
         _graph.add_node(assign_node)
+        _graph.save(assign_node)
 
         if function_node is None:
             return
@@ -145,7 +177,8 @@ class Constant(fem.Constant):
         if _graph is None:
             return
 
-        Constant_node = graph.Node(self, name=name)
+        Constant_node = ConstantNode(self, name=name)
         _graph.add_node(Constant_node)
+        _graph.save(Constant_node)
         arguments = bind_arguments(fem.Constant.__init__, self, *args, **kwargs)
         self.domain = arguments["domain"]

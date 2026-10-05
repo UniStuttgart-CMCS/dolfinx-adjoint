@@ -13,8 +13,8 @@ def unit_square_mesh() -> mesh.Mesh:
 
 @pytest.fixture(
     scope="module",
-    params=[MPI.COMM_SELF, MPI.COMM_WORLD],
-    ids=["COMM_SELF", "COMM_WORLD"],
+    params=[MPI.COMM_SELF] + ([MPI.COMM_WORLD] if MPI.COMM_WORLD.size > 1 else []),
+    ids=lambda comm: "COMM_SELF" if comm is MPI.COMM_SELF else "COMM_WORLD",
 )
 def unit_square_mesh_per_comm(request: pytest.FixtureRequest) -> mesh.Mesh:
     """Create one unit-square mesh per communicator and test module."""
@@ -22,7 +22,7 @@ def unit_square_mesh_per_comm(request: pytest.FixtureRequest) -> mesh.Mesh:
 
 
 @pytest.fixture(scope="module")
-def left_half_unit_sqaure_mesh(
+def left_half_unit_square_mesh(
     unit_square_mesh: mesh.Mesh,
 ) -> tuple[mesh.Mesh, mesh.EntityMap]:
     """The left half of the unit square, with the map back to the cells it was cut from."""

@@ -221,10 +221,10 @@ def test_problem_records_a_solution_that_is_not_in_the_graph(
 
 def test_problem_edges_compile_the_adjoint_with_the_recorded_arguments(
     unit_square_mesh: mesh.Mesh,
-    left_half_unit_sqaure_mesh: tuple[mesh.Mesh, mesh.EntityMap],
+    left_half_unit_square_mesh: tuple[mesh.Mesh, mesh.EntityMap],
 ) -> None:
     """Catch the coefficient edge of a problem compiling its derivative bare."""
-    submesh, cell_map = left_half_unit_sqaure_mesh
+    submesh, cell_map = left_half_unit_square_mesh
     graph_ = Graph()
 
     V = fem.functionspace(unit_square_mesh, ("Lagrange", 1))

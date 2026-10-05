@@ -22,8 +22,8 @@ def dirichletbc(*args, **kwargs):
     Args:
         args: Arguments to :py:func:`dolfinx.fem.dirichletbc`.
         kwargs: Keyword arguments to :py:func:`dolfinx.fem.dirichletbc`.
-        graph: An additional keyword argument to specifier wheter the assemble
-            operation should be added to the graph. If not present, the original functionality
+        graph: An additional keyword argument to specify whether the boundary
+            condition should be added to the graph. If not present, the original functionality
             of dolfinx is used without any additional functionalities.
 
     """

@@ -83,13 +83,13 @@ def test_form_constant_gradient_on_measures(
 
 def test_form_is_replayed_with_the_arguments_it_was_recorded_with(
     unit_square_mesh: mesh.Mesh,
-    left_half_unit_sqaure_mesh: tuple[mesh.Mesh, mesh.EntityMap],
+    left_half_unit_square_mesh: tuple[mesh.Mesh, mesh.EntityMap],
 ) -> None:
     """Catch ``FormNode.__call__`` recompiling the form with no arguments at all.
 
     That recompilation cannot relate the coefficient to the integration domain without the maps the form was recorded with, so it raises where the forward pass succeeded.
     """
-    submesh, cell_map = left_half_unit_sqaure_mesh
+    submesh, cell_map = left_half_unit_square_mesh
     graph_ = Graph()
 
     V = fem.functionspace(unit_square_mesh, ("Lagrange", 1))
@@ -113,7 +113,7 @@ def test_form_is_replayed_with_the_arguments_it_was_recorded_with(
 @pytest.mark.parametrize("control_name", ["coefficient", "constant"])
 def test_form_edges_compile_the_derivative_with_the_recorded_arguments(
     unit_square_mesh: mesh.Mesh,
-    left_half_unit_sqaure_mesh: tuple[mesh.Mesh, mesh.EntityMap],
+    left_half_unit_square_mesh: tuple[mesh.Mesh, mesh.EntityMap],
     control_name: str,
 ) -> None:
     """Catch either edge of a form compiling its derivative bare.
@@ -121,7 +121,7 @@ def test_form_edges_compile_the_derivative_with_the_recorded_arguments(
     The coefficient and the constant take different edges out of the form, and each edge compiles a derivative that spans the same two meshes as the form itself, so without the recorded maps the form can be assembled but not differentiated.
     Both controls enter the functional the same way and hold the same value, so one expected gradient covers both; the constant carries a shape, which is what makes its edge return a vector rather than a sum.
     """
-    submesh, cell_map = left_half_unit_sqaure_mesh
+    submesh, cell_map = left_half_unit_square_mesh
     graph_ = Graph()
 
     V = fem.functionspace(unit_square_mesh, ("Lagrange", 1))

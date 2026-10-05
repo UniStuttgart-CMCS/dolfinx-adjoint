@@ -222,9 +222,4 @@ Acknowledgments
 This library builds upon the `FEniCS Project <https://fenicsproject.org/>`_ and uses
 `DOLFINx <https://github.com/FEniCS/dolfinx>`_ as its foundation.
 
-.. toctree::
-   :maxdepth: 2
-   :caption: API Reference
-   :hidden:
-
-   api/modules
+.. include:: api/dolfinx_adjoint.rst

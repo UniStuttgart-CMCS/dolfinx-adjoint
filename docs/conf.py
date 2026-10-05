@@ -17,13 +17,16 @@ extensions = [
     "sphinx_design",
 ]
 
+napoleon_use_ivar = True
+
 # Resolve references to DOLFINx, matching the version used in CI.
 intersphinx_mapping = {
     "dolfinx": ("https://docs.fenicsproject.org/dolfinx/v0.11.0/python/", None),
 }
 
 templates_path = ["_templates"]
-exclude_patterns = ["_build", "Thumbs.db", ".DS_Store"]
+# The generated root supplies API navigation through an include, not a wrapper page.
+exclude_patterns = ["_build", "api/dolfinx_adjoint.rst", "Thumbs.db", ".DS_Store"]
 
 html_theme = "sphinx_rtd_theme"
 html_title = "DOLFINx-ADJOINT docs"
